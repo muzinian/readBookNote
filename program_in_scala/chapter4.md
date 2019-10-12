@@ -55,3 +55,7 @@ val csa = new ChecksumAccumulator
     2. 下一行的开头词不能作为语句的开始
     3. 行结尾还在括号内(圆括号或者方括号)，因为它们内部不能包含多行
 19. scala相对于java更加面向对象在于scala没有静态方法。作为替代，Scala有 _单例对象(singleton object)_。
+20. 单例对象的定义类似于类定义，除了关键字用`object`声明而不是`class`
+    ```scala
+    import scala.
+    ```
