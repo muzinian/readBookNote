@@ -57,5 +57,22 @@ val csa = new ChecksumAccumulator
 19. scala相对于java更加面向对象在于scala没有静态方法。作为替代，Scala有 _单例对象(singleton object)_。
 20. 单例对象的定义类似于类定义，除了关键字用`object`声明而不是`class`
     ```scala
-    import scala.
+    import scala.collection.mutable
+    object ChecksumAccumulator {
+        private val cache = mutable.Map.empty[String,Int]
+        def calculate(s:String):Int = {
+            if (cache.contains(s))
+                cache(s)
+            else{
+                val acc = new ChecksumAccumulator
+                for (c <- s)
+                    acc.add(c.toByte)
+                val cs = acc.checksum()
+                cache += (s->cs)
+                cs
+            }
+        }
+    }
     ```
+21. 当单例对象和类共享一个名字时，就叫这个对象为类的`companion object`，你需要把类和类的companion object定义到同一个源文件中。这个类叫做这个单例对象的`companion class`。类和它的companion object可以互相访问对方的私有成员。
+22. 
