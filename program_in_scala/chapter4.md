@@ -75,4 +75,33 @@ val csa = new ChecksumAccumulator
     }
     ```
 21. 当单例对象和类共享一个名字时，就叫这个对象为类的`companion object`，你需要把类和类的companion object定义到同一个源文件中。这个类叫做这个单例对象的`companion class`。类和它的companion object可以互相访问对方的私有成员。
-22. 
+22. 你可以把单例对象类比为java中存放静态方法的类。但他远远不止这样。它是第一类对象。
+    ![figure4_3.png "单例对象构造"](figure4_3.png "单例对象构造")
+23. 定义一个单例对象不会定义一个类型(在Scala这一抽象层级上)。给定一个`ChecksumAccumlator`对象的定义，你不能创建一个变量类型是`ChecksumAccmulator`。这个类型是由单例对象的伴生类定义的。
+24. 单例对象可以扩展超类以及mix-in traits。每个单例对象都是它超类和mixed-in traits的实例。你可以通过这些类型调用它的方法，通过这些类型的变量引用它，给形参是这些类型的方法传递这个对象。
+25. 单例对象和类的一个区别在于，类可以有参数，但是单例对象没有。你不能通过`new`关键字实例化一个单例对象，所以你没有办法传递参数。
+26. 单例对象被实现为由一个静态变量引用的合成类(synthetic class java编译器生成的一个类型)实例(singleton objects is implemented as an instance of a synthetic class referenced from a static variable)，所以他和Java的`static`有同样的初始化语义。特别的，单例对象在代码第一次访问她的时候初始化。
+27. 如果单例对象没有同名的伴生类型，那么这个对象就被称为 _独立对象_。独立对象可用于很多目的，包括收集相关工具方法或者定义Scala应用的入口点。
+28. 为了运行一个程序，你需要提供一个独立对象，它包含一个名为`main`，接收一个`Array[String]`string数组作为参数，返回类型是`Unit`的方法。
+    ```scala
+    // In file Summer.scala
+    import ChecksumAccumulator.calculate
+    object Summer {
+        def main(args: Array[String]) = {
+            for (arg <- args)
+                println(arg + ": " + calculate(arg))
+        }
+    }
+    ```
+29. Scala隐式的在每个Scala源文件导入了`java.lang`和`scala`包成员，还有单例对象`Predef`的成员。`Predef`是在包`scala`中的，包含很多有用的方法。例如，你在Scala源文件中调用了`println`，你实际上调用的是`Predef`上的`println`。`Predef.println`接下来调用的是`Console.println`，后者做了实际的工作。
+30. Scala有一点和Java不同，Java的类文件要和公共类名一致。Scala中，没有这个要求。但是一般建议按照Java的方式来。
+31. 如果代码文件是以定义结束的，那么就不是一个脚本，脚本需要以结果表达式结尾。
+32. 每次你使用scalac来编译代码，编译器在编译源码前，会扫描jar文件内容并执行其它初始化工作。所以Scala发布了一个Scala编译器daemon叫做fsc(fast scala compiler)。他会在本地启动一个server daemon，并附加在你电脑的端口上，在第一次的时候，还会执行相应的扫描初始化工作，但是在第二次的时候就可以跳过了。
+33. Scala提供了一个trait，Scala.App，通过`extend`关键字在你的单例对象继承了`App`。就可以不用编写`main`方法了。直接在单例对象的大括号之间编写你的代码就可以了。
+    ```scala
+    import ChecksumAccumulator.calculate
+    object FallWinterSpringSummer extends App {
+        for (season <- List("fall", "winter", "spring"))
+            println(season + ": " + calculate(season))
+        }
+    ```
