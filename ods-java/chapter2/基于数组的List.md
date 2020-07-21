@@ -153,6 +153,8 @@ $$10+5 = 15\equiv 3\pmod {12}.$$
 $$15 \bmod 12 = 3$$
 更一般的是，对于一个整数$a$和正整数$m$，$a\bmod m$的结果是唯一的整数$r\in \{0,...,m-1\}$对某个整数$k$使得$a=r+km$。不太形式化的说，值$r$是我们用$m$除$a$后得到的余数。在很多计算机语言中，包括Java，mod操作是使用%表示[<sup id="content2">2</sup>](#2)。
 
+[<sup id="2">2</sup>](#content2)有时候也叫做 _脑死亡_ mod操作，因为当第一个参数是负数的时候，它没有被正确的实现数学上的mod操作。
+
 模运算对于模拟无限数组很有帮助，因为$i \bmod a.length$结果总是位于$0,...,a.length-1$中。使用模运算我们可以在数组中存放队列元素。
 `a[j%a.length],a[(j+1)%a.length],...,a[(j+n-1)%a.length]`
 
@@ -225,7 +227,7 @@ T set(int i,T x){
 ```
 `add(i,x)`的实现更有意思点。想通常那样，我们先检查`a`是不是满的，如果需要，调用`resize()`来调整`a`。记住我们想要这个操作很快当`i`很小(接近0)或者当`i`很大(接近$n$)。因此，我们检查是否$i \lt n/2$。如果是，我们对元素`a[0],...,a[i-1]`左移一个位置。否则($i \ge n/2$)，我们对元素`a[i],...,a[n-1]`右移一个位置。图2.3解释了`ArrayDeque`的`add(i,x)`和`remove(x)`操作。
 
-![figure2.3.png "对`ArrayDeque`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。")
+![figure2.3.png "对`ArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。")
 
 ```Java
 void add(int i,T x){
@@ -271,6 +273,249 @@ __定理2.3.__ 一个`ArrayDeque`实现了`List`接口。忽略`resize()`调用�
 
 进一步的，从一个空`ArrayDeque`开始，执行任意$m$个`add(i,x)`和`remove(i)`操作序列会导致所有对`resize()`的调用一共花费$O(m)$的时间。
 
+### 2.5 `DualArrayDeque`：使用两个栈构建一个双端队列
+下一步，我们展示一个数据结构：`DualArrayDeque`，它使用两个`ArrayStack`达到了和`ArrayDeque`有同样的性能限制。尽管`DualArrayDeque`的渐进性能不比`ArrayDeque`好，它依旧值得我们学习，因为对于如何使用两个简单的数据结构结合成一个更复杂的数据结构，它提供了很好的范例。
 
+一个`DualArrayDeque`表示一个使用了两个`ArrayStack`的链表。回忆一下，当一个操作是修改的元素靠近`ArrayStack`端点时这个操作就很快。`DualArrayDeque`背靠背放置两个`ArrayStack`，叫做`front`和`back`，这样操作在哪一端都很快。
+```Java
+List<T> front;
+List<T> back;
+```
+一个`DualArrayDeque`不会显式存储它存放的元素个数`n`。它不需要，因为他存放了$n=front.size()+back.size()$个元素。然而，在分析`DualArrayDeque`时，我们依旧使用`n`表示它包含的元素个数。
+```Java
+int size(){
+    return front.size()+back.size();
+}
+```
+`front` `ArrayStack`存放的链表元素索引从`0,...,front.size()-1`，但是是按照逆序存放的。`back` `ArrayStack`包含的链表元素按照正常顺序存放，索引范围是`front.size(),...,size()-1`。按照这种方式，`get(i)`和`set(i,x)`会被对应的翻译为对`front`或者`back`的`get(i)`和`set(i,x)`的调用，每个操作时间开销是$O(1)$。
+```Java
+T get(int i){
+    if(i<front.size()){
+        return front.get(front.size()-i-1);
+    }else{
+        return back.get(i-front.size());
+    }
+}
+T set(int i,T x){
+    if(i<front.size()){
+        return front.set(front.size()-i-1,x);
+    }else{
+        return back.set(i-front.size(),x);
+    }
+}
+```
+注意如果索引`i`满足`i<front.size()`，那么，它对应到的`front`元素位置是在`front.size()-i-1`，因为`front`的元素是按照逆序方式存放的。
 
-[<sup id="2">2</sup>](#content2)有时候也叫做 _脑死亡_ mod操作，因为当第一个参数是负数的时候，它没有被正确的实现数学上的mod操作。
+从`DualArrayDeque`中添加或者删除一个元素在图2.4中展示了。`add(i,x)`操作的是对应的`front`或者`back`：
+```Java
+void add(int i,T x){
+    if(i<front.size()){
+        front.add(front.size()-i,x);
+    }else{
+        back.add(i-front.size(),x);
+    }
+    balance();
+}
+```
+![figure2.4.png "对`DualArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了。"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了")
+
+`add(i,x)`方法通过调用`balance()`方法对`front`和`back`这两个`ArrayStack`执行了再平衡操作。`balance()`的实现在后面描述，现在，知道`balance()`保证了除非`size()<2`，`front.size()`和`back.size()`不会相差超过三倍(`front.size()` and `back.size()` do not differ by more than a factor of 3)。具体地说，$3 \cdot front.size() \ge back.size()$且$3 \cdot back.size() \ge front.size()$。
+
+接下来我们在忽略`balance()`调用开销的情况下分析`add(i,x)`的开销。如果`i<front.size()`，那么`add(i,x)`是通过调用`front.add(front.size()-i-1,x)`实现的。因为`front`是一个`ArrayStack`，这个开销就是：
+$$O(front.size()-(front.size()-i-1)+1) = O(i+1).(2.1)$$
+另一方面，如果`i>front.size()`，那么`add(i,x)`是通过`back.add(i-front.size(),x)`实现的。开销是：
+$$O(back.size()-(i-front.size())+1) = O(n-i+1).(2.2)$$
+注意，第一个情况(2.1)发生在$i<n/4$。第二种情况出现在$i\ge 3n/4$。当$n<4\le i <3n/4$，我们不能确定影响的是`front`或者`back`的哪个，但是在两种情况下，操作都会花费$O(n)=O(i)=O(n-i)$的时间，因为$i\ge n/4$且$n-i>n/4$。总结一下情况，我们有：
+$$add(i,x)\text{运行时间}\le \begin{Bmatrix}
+    \begin{aligned}
+        &O(1+i) \qquad 如果\; i< n/4\\
+        &O(n) \qquad 如果\;n/4 \le <3n/4\\
+        &O(1+n-i) \qquad 如果\;i \ge 3n/4 
+    \end{aligned}
+\end{Bmatrix}$$
+因此，在忽略调用`balance`的开销，`add(i,x)`的运行时间是$O(1+min\{i,n-i\})$。
+```Java
+T remove(int i){
+    T x;
+    if(i < front.size()){
+        x = front.remove(front.size()-i-1);
+    }else{
+        x = back.remove(i-front.size());
+    }
+    balance();
+    return x;
+}
+```
+#### 2.5.1 平衡操作
+最后，我们转向`add(i,x)`和`remove(i)`执行的`balance()`操作。这个操作确保了无论`front`还是`back`都不会变得太大(或者太小)。它保证了，除非链表中元素小于两个，那么`front`和`back`至少包含$n/4$个元素。如果不是这种情况，那么他就会在两者之间移动元素这样`front`和`back`就分别准确的包含了$\lfloor n/2\rfloor$个元素和$\lceil n/2\rceil$元素。
+```Java
+void balance(){
+    int n = size();
+    if(3*front.size()<back.size()){
+        int s = n/2 - front.size();
+        List<T> l1 = newStack();
+        List<T> l2 = newStack();
+        l1.addAll(back.subList(0,s));
+        Collections.reverse(l1);
+        l1.addAll(front);
+        l2.addAll(back.subList(s,back.size()));
+        front = l1;
+        back = l2;
+    } else if(3*back.size()< front.size()){
+        int s = front.siez() - n/2;
+        List<T> l1 = newStack();
+        Lsit<T> l2 = newStack();
+        l1.addAll(front.subList(s,front.size()));
+        l2.addAll(front.subList(0,s));
+        Collections.reverse(l2);
+        front = l1;
+        back = l2;
+    }
+}
+```
+这里我们稍微分析下。如果`balance()`操作进行了再平衡操作，那么它移动了`O(n)`个元素并花费了`O(n)`的时间。这很糟糕，因为`balance()`在每次调用`add(i,x)`和`remove(i)`时都会被调用。然而，下面的引理显示了，平均情况下，对于每次操作，`balance()`只花费常量的时间。
+
+__引理2.2__ 如果创建了一个空`DualArrayDeque`并且以任意顺序调用了`add(i,x)`和`remove(i)`$m \ge 1$次，那么对`balance()`所有调用花费的全部时间是$O(m)$。
+
+$\textit{证明.}$我们将展示，如果`balance()`需要移动元素，那么从上一次有元素被`balance()`移动到这一次，期间`add(i,x)`和`remove(i)`操作执行次数至少是$n/2-1$。在引理2.1的证明中，这就足够证明`balance()`操作花费的时间是$O(m)$。
+
+我们将使用一个叫做 _势能方法(potential method)_ 的技术进行分析。定义`DualArrayDeque`的 _势能(potential)_，$\Phi$，为`front`和`back`的差值：
+$$\Phi = |front.size()-back.size()|$$
+关于这个势能有意思的是对于不执行任何平衡操作的`add(i,x)`和`remove(i)`最多会对势能加一。
+
+观察到，在调用`balance()`操作移动了元素后，此时势能$\Phi_{0}$，最多等于1，因为：
+$$\Phi_{0} = |\lfloor n/2\rfloor - \lceil n/2 \rceil| \le 1.$$
+
+考虑马上就要调用会移动元素的`balance()`操作前，并假设，不失一般性的，`balance()`操作是因为$3front.size() \lt back.size()$。注意到，在这种情况下：
+$$\begin{aligned}
+  n = &front.size() + back.size()\\
+  & back.size()/3 + back.size() \\
+  &=\frac{4}{3}back.size()
+\end{aligned}$$
+进一步的，在此刻势能就是：
+$$\begin{aligned}
+    \Phi_{1} &= back.size() - front.size()\\
+    &\gt back.size() -back.size()/3\\
+    &= \frac{2}{3}back.size()\\
+    &> \frac{2}{3}\times\frac{3}{4}n\\
+    &= n/2
+\end{aligned}$$
+因此，从上一次移动元素的`balance()`从左后调用`add(i,x)`和`remove(i)`的次数至少是$\Phi_{1}-\Phi_{0} \gt n/2-1.$这就完成了证明。$\square$
+#### 25.2 总结
+下面的定理总结了`DualArrayDeque`的特性：
+__定理2.4__ 一个`DualArrayDeque`实现了`List`接口。忽略掉调用`resize()`和`balance()`的开销，`DualArrayDeque`支持
+* `get(i)`和`set(i,x)`的时间开销是$O(1)$的，并且
+* `add(i,x)`和`remove(i)`的时间开销是$O(1+\min\{1,n-i\})$。
+进一步的，从一个空的`DualArrayDeque`开始，$m$次任意的调用`add(i,x)`和`remove(i)`操作最终会导致全部对`resize()`和`balance()`的调用一共花费$O(m)$时间。
+
+### 2.6 `RootishArrayStack`:一个空间高效的数组栈
+本章前面所有数据结构的缺点之一就是：由于它们把数据存到一到两个数组中并且避免太平凡的调整数组大小，这些数组频繁的处于不是很满的状况。例如，对于一个刚刚进行了进行`resize()`操作的`ArrayStack`，后端数组只有填充了一半。更糟糕的是，有时候只有三分之一包含数据。
+
+在本段，我们将讨论了`RootishArrayStack`数据结构，它解决了空间浪费的问题。`RootishArrayStack`使用$O(\sqrt{n})$个数组存放$n$个元素。在这些数组中，任意时刻最多有$O(\sqrt{n})$个数组位置没有被使用。其他所有剩下的数组位置都用来存放数据了。因此，这些数据结构在存放$n$个元素时，最多浪费了$O(\sqrt{n})$个空间。
+
+`RootishArrayStack`把它的元素存放在一个由$r$个数组组成的列表中，这些数组又叫做 _块(block)_，编号`0,1,...,r-1`。如图2.5。
+
+![figure2.5.png "对RootishArrayStack执行一系列add(i,x)和remove(i)操作。箭头表示元素被复制"](figure2.5.png "对RootishArrayStack执行一系列add(i,x)和remove(i)操作。箭头表示元素被复制")
+
+块`b`包含`b+1`个元素。因此，所有`r`个块一共包含:
+$$1+2+3+\cdot \cdot \cdot +r=r(r+1)/2$$
+个元素。上面的等式可以根据图2.6获取到。
+![figure2.6.png "白色方块个数是$1+2+3+...+r$。灰色方块个数是一样的。灰色和白色方块加在一起得到矩形是由$r(r+1)个方块组成的$"](figure2.6.png "白色方块个数是1+2+3++r。灰色方块个数是一样的。灰色和白色方块加在一起得到矩形是由r(r+1)个方块组成的")
+```Java
+List<T[]>blocks;
+int n;
+```
+正如我们所期望的，list的元素在blocks内是有序排列的。list中下标为0的元素存在块(block)`0`中。下标是1和2的元素存放在块(block)`1`中，下标为3，4和5的存放在块(block)`2`中，以此类推。我们要解决的主要问题是给定一个下标`i`，怎么确定哪个block包含下标`i`的元素，以及block内`i`对应的下标。
+
+事实上，确定`i`在包含它的block中的索引很容易。如果索引`i`位于块b中，那么位于块`0,...,b-1`的元素个数是$b(b+1)/2$。因此，`i`存放在块`b`内位置
+$$j=i-b(b+1)/2$$
+处。根据挑战性的问题是确定`b`的值。下标小于等于`i`的元素个数是`i+1`。另一方面，在块`0,...,b`中的元素个数是$(b+1)(b+2)/2$。因此，`b`是满足不等式
+$$(b+1)(b+2)/2 \ge i+1$$
+的最小整数。我们可以重写这个不等式为：
+$$b^2+3b-2i \ge 0.$$
+对应的二次方程式为$b^2+3b-2i = 0$有两个解：$b=(-3+\sqrt{9+8i})/2$和$b=(-3-\sqrt{9+8i})/2$。第二个解在我们的应用中没有意义，因为他总是返回一个负数。因此i，我们取的解是$b=(-3+\sqrt{9+8i})/2$。一般的，这个解不是一个整数，但是回到我们的不等式，我们想要的是的最小整数$b$因此$b\ge (-3+\sqrt{9+8i})/2$。这可以简化为：
+$$b=\lceil(-3+\sqrt{9+8i})/2\rceil$$
+
+```Java
+int i2b(int i){
+    double db = (-3.0 + Math.sqrt(9+8*i))/2.0;
+    int b = (int)Math.ceil(db);
+    return b;
+}
+```
+使用这种方法，`get(i)`和`set(i,x)`方法的实现就很直接了。我们首先计算对应的块`b`和这个块内对应的索引`j`然后执行相应的操作:
+```Java
+T get(int i){
+    int b = i2b(i);
+    int j = i - b*(b+1)/2;
+    return blocks.get(b)[j];
+}
+T set(int i,T x){
+    int b = i2b(i);
+    int j = i - b*(b+1)/2;
+    T y = blocks.get(b)[j];
+    blocks.get(b)[j] = x;
+    return y;
+}
+```
+如果我们使用本章中任意数据结构表示`blocks`链表，那么`get(i)`和`set(i,x)`运行时间都是常量时间。
+
+`add(i,x)`方法现在看起来就很眼熟了。我们首先通过检查块的数量$r$是否满足$r(r+1)/2=n$判断链表是否已满。如果满了，我们调用`grow()`增加一个block。完成后，我们分别向右移动下标为`i,...,n-1`的元素一个位置，为下标为`i`的新元素腾位置：
+```Java
+void add(int i,T x){
+    int r = blocks.size();
+    if(r*(r+1)/2 < n+1) grow();
+    n++;
+    for(int j = n-1; j > i;j--)
+        set(j,get(j-1));
+    set(i,x);
+}
+```
+`grow()`方法做了我们希望的事情。它加入一个新块：
+```Java
+void grow(){
+    blocks.add(new Array(blocks.size()+1));
+}
+```
+忽略`grow()`操作的开销，一次`add(i,x)`操作的开销由移动元素的开销决定，因此结果是$O(1+n-i)$，就像`ArrayStack`。
+
+`remove(i)`操作类似于`add(i,x)`。它分别向左移动下标为`i+1,...,n`的元素一个位置然后，如果有超过一个空的块，就调用`shrink()`方法只保留一个未使用块，其它都删除了：
+```Java
+T remove(int i){
+    T x = get(i);
+    for(int j = i; j < n-1; j++)
+       set(j,get(j+1));
+    n--;
+    int r = blocks.size();
+    if((r-2)*(r-1)/2 >= n) shrink();
+    return x;
+}
+```
+```Java
+void shrink(){
+    int r = blocks.size();
+    while(r > 0 && (r-2)*(r-1)/2 >= n){
+        blocks.remove(blocks.size()-1);
+        r--;
+    }
+}
+```
+再一次，忽略`shrink()`操作的开销，一个`remove(i)`操作的开销是由移动元素决定的，所以结果是$O(n-i)$。
+
+#### 2.6.1 Growing和Shrinking分析
+上面对`add(i,x)`和`remove(i)`的分析没有计算`grow()`和`shrink()`的开销。注意，和`ArrayStack.resize()`操作不同，`grow()`和`shrink()`操作不复制任何数据。它们仅仅是分配或者释放大小为`r`的数组。在某些环境中，这只花费常量时间，然而在另外一些，他可能会需要正比于$r$的时间。
+
+我们注意到，在调用`grow()`或者`shrink()`刚结束时，情况是很清晰的。最后一个块是完全空的，其它所有块是满的。知道至少删除或者增加$r-1$个元素后才会发生另外一次对`grow()`或者`shrink()`调用。因此，即使`grow()`和`shrink()`时间开销是$O(r)$，这个开销可以摊还到至少`r-1`次`add(i,x)`或者`remove(i)`操作上，所以`grow()`和`shrink()`的摊还开销是每个操作$O(1)$。
+
+#### 2.6.2 空间使用
+接下来，我们分析`RootishArrayStack`的额外空间使用。具体地说，我们想要统计`RootishArrayStack`中没有被当前某个数组元素用来存放列表元素的全部空间。我们称这些空间为 _浪费空间(waste space)_。
+
+`remove()`操作保证了`RootishArrayStack`永远不会超过两个块是全满的。`RootishArrayStack`用来存放$n$个元素的块个数$r$满足等式：
+$$(r-2)(r-1)\le n.$$
+再一次，使用二次方程式，我们得到：
+$$r \le (3+\sqrt{1+4n}/2)=O(\sqrt{n}).$$
+最后两个块的大小是$r$和$r-1$，所以这两个块浪费的空间最多不会超过$2r-1=O(\sqrt{n})$。如果我们把这些块存放到`ArrayStack`中(举个例子)，那么这个链表用来存放那些$r$个块浪费的空间总数也是$O(r) = O(\sqrt{n})$。用来存放$n$和其他统计信息的空间是$O(1)$。因此，`RootishArrayStack`浪费的全部空间总量是就是$O(\sqrt{n})$。
+
+接下来，我们证明对于任意一个数据结构，如果它是从空开始，并且支持一次增加一个元素，那么上述的空间使用是最优的。更精确的说，我们将会展示，在增加$n$个元素期间的某一点，这种数据结构正在浪费的空间总量至少是$\sqrt{n}$(尽管他可能只会在很短的时间内浪费这些空间)。
+
+假设我们从一个空的数据结构开始，我们往这个结构一次加入一个元素共加入$n$个元素。在过程结束后，所有$n$个元素都存入了结构中，并且分布在$r$个内存块中。如果$r\ge \sqrt{n}$，那么这个数据结构必须要使用$r$个指针(或者引用)开追踪这个$r$个块，这些指针就是浪费空间。另一方面，如果$r<\sqrt{n}$，那么，通过鸽笼原理，某些块必须的大小必须至少是$n/r>\sqrt{n}$。考虑这个块第一次被分配时的情况。在他被分配后那一时刻，这个块是空的，因此浪费了$\sqrt{n}$个空间。因此，再插入$n$个元素期间的某一时刻，这个数据结构浪费了$\sqrt{n}$的空间。
