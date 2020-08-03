@@ -101,7 +101,7 @@ $$\begin{aligned}
 \end{aligned}$$
 在这两种情况下，在第$(i-1)$次和第$i$次调用`resize()`之间`调用`add(i,x)`或者`remove(i)`的数量至少是$n_i/2-1$，证明完成。$\square$ 
 
-[<sup id='1'>1</sup>](#content1)公式中的$-1$是为了防止$n=0$且$a.length=1$这个特殊例子。
+[<sup id="1">1</sup>](#content1)公式中的$-1$是为了防止$n=0$且$a.length=1$这个特殊例子。
 
 #### 2.1.3 总结
 下面的定理总结了`ArrayStack`的性能：
@@ -519,3 +519,82 @@ $$r \le (3+\sqrt{1+4n}/2)=O(\sqrt{n}).$$
 接下来，我们证明对于任意一个数据结构，如果它是从空开始，并且支持一次增加一个元素，那么上述的空间使用是最优的。更精确的说，我们将会展示，在增加$n$个元素期间的某一点，这种数据结构正在浪费的空间总量至少是$\sqrt{n}$(尽管他可能只会在很短的时间内浪费这些空间)。
 
 假设我们从一个空的数据结构开始，我们往这个结构一次加入一个元素共加入$n$个元素。在过程结束后，所有$n$个元素都存入了结构中，并且分布在$r$个内存块中。如果$r\ge \sqrt{n}$，那么这个数据结构必须要使用$r$个指针(或者引用)开追踪这个$r$个块，这些指针就是浪费空间。另一方面，如果$r<\sqrt{n}$，那么，通过鸽笼原理，某些块必须的大小必须至少是$n/r>\sqrt{n}$。考虑这个块第一次被分配时的情况。在他被分配后那一时刻，这个块是空的，因此浪费了$\sqrt{n}$个空间。因此，再插入$n$个元素期间的某一时刻，这个数据结构浪费了$\sqrt{n}$的空间。
+### 2.6.3 总结
+下面的定理总结了我们对于`RootishArrayStack`这个数据结构的的讨论。
+__定理2.5__ `RootishArrayStack`实现了List接口。忽略调用`grow()`和`shrink()`的调用开销，一个`RootishArrayStack`支持这些操作：
+* 操作是$O(1)$开销的`get(i)`和`set(i,x)`；以及
+* 操作为$O(1+n-i)$开销的`add(i,x)`和`remove(i)`。
+进一步的，从一个空`RootishArrayStack`开始，以任意顺序调用`add(i,x)`和`remove(i)`操作$m$次所产生的对`grow()`和`shrink()`调用一共会花费$O(m)$的时间开销。
+
+`RootishArrayStack`用来存放$n$个元素的空间(按照字来计算[<sup id= "3">3</sup>](#3))是$n+O(\sqrt{n})$。
+[<sup id="content3">3</sup>](#content3) 回忆下在1.4节讨论过的内存如何被测量。
+### 2.6.4 计算平方
+对计算模型(models of computation)有所了解的读者可能会注意到上面讨论到的`RootishArrayStack`并没不满足通常的word-RAM计算模型(第1.4节)，因为它要求计算平方数。平方操作通常不认为是基本操作因此经常不是word-RAM模型的一部分。
+
+在这一节，我们会展示开平方操作有更高效的实现。特别的，我们会展示，对于任意一个整数$x$满足$x\in \{0,...,n\}$，那么在经过$O(\sqrt{n})$时间开销的预处理操作并产生两个长度为$O(\sqrt{n})$的数组后，$\lfloor \sqrt{x}\rfloor$可以在常量时间中计算出来。下面的引理向展示了我们可以把计算$x$的平方根这一问题化简为计算相关值$x'$的平方根。
+
+__引理2.3__ 设$x\ge 1$且$x'=x-a$，其中$0\le a \le \sqrt{x}$。那么$\sqrt{x'}\ge \sqrt{x}-1$。
+$\text{证明}$ 有如下不等式：
+$$\sqrt{x-\sqrt{x}}\ge \sqrt{x}-1.$$
+两边都平方得到不等式如下：
+$$x-\sqrt{x}\ge x-2\sqrt{x}+1$$
+合并计算后：
+$$\sqrt{x}\ge 1$$
+这对任意$x\ge 1$显然是真的。
+让我们先稍微限定一下问题开始，假设$2^r\le x \le 2^{r+1}$，那么$\lfloor \log x\rfloor = r$，例如，$x$是一个整数，它的二进制表示包含了$r+1$个位。我们可以设置$x'=x-(x \bmod 2^{\lfloor r/2 \rfloor})$(译注：$a \bmod b$的结果肯定是小于$b$的，所以，要考虑的就是$b$的取值是否满足引理2.3)。这样$x'$满足引理2.3的条件，所以$\sqrt{x}-\sqrt{x'}\lg 1$。进一步的，$x'$所有低于$\lfloor r/2 \rfloor$的bit位都等于0，所以$x'$只有
+$$2^{r+1-\lfloor r/2 \rfloor} \le 4 \cdot 2^{r/2} \le 4\sqrt{x}$$
+个可能值。这意味着我们可以使用一个数组`sqrttab`，对于每个可能的$x'$存放了$\lfloor \sqrt{x'}\rfloor$的值。更精确点，我们有：
+$$sqrttab[i]=\lfloor \sqrt{i2^{\lfloor r/2 \rfloor}} \rfloor$$
+使用这种方式，对于任意$x \in \{i2^{\lfloor r/2 \rfloor},...,(i+1)2^{\lfloor r/2 \rfloor}-1\}$，`sarttab[i]`与$\sqrt{x}$的差是2。换句话说，这个数组的条目$s=sqrttab[x>>\lfloor r/2\rfloor]$可能会等于$\lfloor \sqrt{x} \rfloor,\lfloor \sqrt{x} \rfloor-1,\lfloor \sqrt{x} \rfloor-2$其中之一。通过逐渐递增`s`值到$(s+1)^2\gt x$，我们就可以确认$\lfloor \sqrt{x} \rfloor$的值。
+```Java
+int sqrt(int x,int r){
+    int s = sqrttab[x>>r/2];
+    while ((s+1)*(s+1)<=x)s++;//最多两次
+    return s;
+}
+```
+注意，这只针对$x\in \{2^r,...,2^{r+1}-1\}$有效果，并且`sqrttab`是特定的表隔只针对于特定的值$r=\lfloor \log x \rfloor$有效。为了克服这个，我们可以计算$\lfloor \log n\rfloor$个不同的`sqrttab`数组，每一个都针对于$\lfloor \log x \rfloor$每个可能值。这些表的大小组成了一个指数序列最大值最多是$4\sqrt{n}$，所以所有表的全部大小是$O(\sqrt{n})$。
+
+然而，事实证明超过一个`sqrttab`数组是没必要的；我们只需要一个针对值$r=\lfloor \log n \rfloor$的`sqrttab`。任何值$x$满足$\log x = r'\lt r$都可以通过对$x$乘一个$2^{r-r'}$升级，并使用等式：
+$$\sqrt{2^{r-r'}x}=2^{(r-r')/2}\sqrt{x}$$
+$2^{r-r'}x$的值范围位于$\{2^r,...,2^{r+1}-1\}$，这样我们可以在`sqrttab`中查找它的平方根。如下代码按照这个方式使用大小为$2^{16}$的`sqrttab`实现了为所有范围在$\{0,...,2^{30}-1\}$的非负整数$x$计算$\lfloor \sqrt{x}\rfloor$。
+```Java
+int sqrt(int x){
+    int rp = log(x);
+    int upgrade = ((r-rp)/2)*2;
+    int xp = x << upgrade;//xp的位数为r或者r-1
+    int s = sqrtab[xp >> (r/2)]>>(upgrade/2);
+    while((s+1)*(s+1) <= x)s++;//最多执行两次
+    return s;
+}
+```
+还有一个我们想当然的是如何计算$r'=\lfloor \log x\rfloor$。再一次，我们可以使用一个大小为$2^{r/2}$的数组`logtab`解决这个问题。在这种情况下，代码就很简单了，因为$\lfloor \log x \rfloor$就是$x$二进制表示中为1的最高位下标。这意味着，对于$x \ge 2^{r/2}$，我们可以把$x$向右移动$r/2$个位置作为`logtab`的下标。如下代码使用了大小为$2^{16}$的`logtab`来计算范围位于$\{1,...,2^{32}-1\}$所有$x$的$\lfloor \log x \rfloor$。
+```Java
+int log(int x){
+    if( x >= halfint)
+        return 16+logtab[x>>>16];
+    return logtab[x];
+}
+```
+最后，为了完整性，我们展示了如下初始化`logtab`和`sqrttab`的代码：
+```Java
+void inittabs(){
+    sqrttab = new int[1 << (r/2)];
+    logtab = new int[1 << (r/2)];
+    for(int d = 0;d < r/2; d++)
+        Arrays.fill(logtab,1<<d,2<<d,d);
+    int s = 1<<(r/4);
+    for(int i = 0;i < 1<<(r/2);i++){
+        if((s+1)*(s+2) <= i << (r/2)) s++;
+        sqrttab[i] = s;
+    }
+}
+```
+总结一下，`i2b(i)`方法的计算操作可以在word-RAM上面通过使用$O(\sqrt{n})$额外的内存存储`sqrttab`和`logtab`数组来在常量时间实现。这些数组可以在$n$增加或减少2倍时重建，这中重建的开销可以按照在分析`ArrayStack`中`resize()`的开销那样，摊销到导致$n$改变的`add(i,x)`和`remove(i)`数上。
+
+### 2.7 讨论和练习
+本章描述的大部分数据结构都是很古老的。在三十年前就有了相关实现。例如，由Knuth描述的`stack`，`queues`和`deques`，很容易泛化为本章描述的`ArrayStack`，`ArrayQueue`和`ArrayDeque`。
+
+Brodnik及其合作者似乎是第一个描述`RootishArrayStack`并证明$\sqrt{n}$下界。它们还提供了另一个数据结构，这个结构对块大小的选择更加复杂，为了避免在`i2b(i)`方法中计算平方根。在他们的模式里，包含`i`的块`b`是$\lfloor \log(i+1) \rfloor$，这个值就是`i+1`的二进制表示中出现1的最高位下标(the index of leading 1 bit in the binary representation of i+1)。某些计算机架构提供了计算整数这一下标的指令。在Java中，`Integer`类提供了一个方法`numberOfLeadingZeros(i)`，我们使用这个方法可以很容易计算$\lfloor \log(i+1) \rfloor$。
+
+与`RootishArrayStack`相关的结构是由Goodrich和Kloss介绍的两级tiered-vector。这个结构支持常量时间的`get(i,x)`和`set(i,x)`以及$O(\sqrt{n})$时间的`add(i,x)`和`remove(i)`。练习2.11中讨论的`RootishArrayStack`经过精心的实现也可以有类似的运行时间。
