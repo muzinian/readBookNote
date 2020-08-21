@@ -96,7 +96,7 @@ File Trailer是为了检测页是否完整写入了磁盘中。它只有一个FI
 2. 域完整性保证数据每列的值满足特定条件。通过选者合适数据类型，外键约束，触发器和使用DEFAULT约束来实现域完整性。
 3. 参照完整性保证两个表之间的关系。可以使用外键约束和编写触发器来保证。
 
-InnoDB有集中约束：Primary Key，Unique Key，Foreign Key，Default，Not Null。约束可以通过建立表时进行约束定义，也可以通过ALTER TABLE命令创建。Unique Key约束还可以通过命令CREATE UNIQUE INDEX建立。对于主键约束来说，默认约束名为PRIMARY，Unique Key约束默认约束名和列名一样，可以使用ALTER TABLE创建约束，此时就可以自定义约束名。外键约束的名称是InnoDB生成的。`information_schema`的`TABLE_CONSTRAINTS`可以查看MySQL库下的所有约束信息，对于外键约束，嗯可以通过`REFERENTIAL_CONSTRAINTS`了解外键属性。
+InnoDB有几种约束：Primary Key，Unique Key，Foreign Key，Default，Not Null。约束可以通过建立表时进行约束定义，也可以通过ALTER TABLE命令创建。Unique Key约束还可以通过命令CREATE UNIQUE INDEX建立。对于主键约束来说，默认约束名为PRIMARY，Unique Key约束默认约束名和列名一样，可以使用ALTER TABLE创建约束，此时就可以自定义约束名。外键约束的名称是InnoDB生成的。`information_schema`的`TABLE_CONSTRAINTS`可以查看MySQL库下的所有约束信息，对于外键约束，还可以通过`REFERENTIAL_CONSTRAINTS`了解外键属性。
 
 约束更多的是一个逻辑概念，用来保证数据完整性，而索引是一个数据结构，既有逻辑上的概念，在数据库上也有与之对应的物理存储。
 
@@ -204,4 +204,41 @@ MySQL的分区总是视NULL值小于任何一个非NULL值，与处理ORDER BY�
 4. 用户冲了ALTER，INSERT和CREATE权限外还需要有DROP权限
 使用该语句，不会触发两个表上的触发器，同时AUTO_INCREMENT将被重置。
 
-
+### 总结
+* InnoDB是按照主键顺序存放表数据的，这种方式称为索引组织表(index organized table)
+* 如果创建是没有主键，InnoDB首先会判断表有无非空的唯一索引，如果有，该列就是主键；如果没有，就会自动创建一个6字节大小的指针做主键
+* 如果表有多个非空索引，InnoDB会选择第一个定义的非空索引，注意，这个第一个指的是定义索引的顺序，而不是建表时列的顺序
+* `_rowid`可以显示表的主键，但它只能用于查看单个列为主键的情况，如果主键是多个列组成的就无法使用
+* InnoDB逻辑存储结构分为表空间(tablespace)，段(segment)，区(extent)和页(page)，数据逻辑上存放在这些里面，页(page)也叫做块(block)
+* 表空间是最高层，所有数据都存放在表空间中
+* 即使启用了`innodb_file_per_table`，每个表的表空间只存放数据，索引和插入缓冲Bitmap页
+* 其它如回滚(undo)信息，插入缓冲索引页，系统事务信息，二次写缓冲(doublewrite buffer)还是存放在共享表空间
+* 由于InnoDB的表是索引组织表，索引，数据即索引，索引即数据(重点)。
+* 数据段就是B+树的叶子节点(leaf node segment)，索引段就是B+树的非叶子节点(non-leaf node segment)
+* 区是由连续的页组成的空间，任何情况下区大小都是1MB
+* 为了保证区中页的连贯性，InnoDB一次会从磁盘中申请多个区(书中说的4~5个)
+* InnoDB默认页大小是16KB，所以一个区有64个连续页，可以通过参数`innodb_page_size`调整为4，8，16K，该参数是一次性参数，设置后就无法再进行修改
+* 在每个段开始时，会先使用大小为32个页的碎片页(fragment page)存放数据，使用完这些碎片页后才会按照区的方式申请64个连续页来管理空间
+* InnoDB有多种行格式：Compact和Redundant格式成为Antelope文件格式，新的成为Barracuda文件格式，包含Compressed和Dynamic
+* 对于多字节字符编码的CHAR类型数据，InnoDB内部将其视为变长字符类型，可以认为在多字节字符集中，CHAR和VARCHAR实际存储没有区别
+* User Record就是实际存储行记录的内容，InnoDB总是按照B+树索引组织的，Free Space是一个链表结构，指的是空闲空间，记录被删除后，该空间会被加入到空闲链表中
+* Page Directory存放记录的相对位置(存放的是页的相对位置，而不是偏移量)，这些记录指针称为槽(Slots)或者目录槽(Directory Slots)
+* InnoDB存储引擎的槽是一个稀疏目录(sparse directory)，一个槽中可以保存多个记录，Infimum的n_owned总是1，supremum记录的n_owned取值范围是\[1,8\]，其它用户记录是\[4,8\]，当记录被插入或删除需要对槽进行分裂或则和平衡的维护操作在Slots中记录是按照索引键值顺序存放，这样可以利用二叉查找迅速找到记录指针
+* 由于page directory是稀疏目录，二叉查找只是粗略结果，还需要recoder header的next_recod来继续查找相关记录，这也解释了recorder header中n_owned的意思，因为这些记录并不在Page Directory中
+* B+树索引本身不能找到具体的记录，只能找到该记录所在页。数据库会把该页载入内存，然后再对该页进行二叉查找
+* File Trailer是为了检测页是否完整写入了磁盘中。它只有一个FIL_PAGE_END_LSN，占用8字节，包含两部分，前4字节代表该页checksum，后4字节和File Header中的File_PAGE_LSN相同。通过和File Header的FIL_PAGE_SPACE_OR_CHECKSUM和FIL_PAGE_LSN进行比较(checksum是通过InnoDB的checksum函数进行的比较，不是等值比较)，保证页的完整性
+* 参数`innodb_checksum_algorithm`用来控制checksum函数的算法，默认`crc32`，包括`innodb`、`crc32`、`none`、`strict_innodb`、`strict_crc32`和`strict_none`
+* InnoDB有几种约束：Primary Key，Unique Key，Foreign Key，Default，Not Null。约束可以通过建立表时进行约束定义，也可以通过ALTER TABLE命令创建
+* `information_schema`的`TABLE_CONSTRAINTS`可以查看MySQL库下的所有约束信息，对于外键约束，还可以通过`REFERENTIAL_CONSTRAINTS`了解外键属性
+* 设置参数`sql_mode`为`STRICT_TRANS_TABLES`，这样MySQL就会对数据的合法性进行约束
+* 触发器可以在执行INSERT，DELETE和UPDATE前后调用SQL命令或者存储过程
+* 命令`CREATE TRIGGER`创建触发器，最多为一个表可以创建6个触发器，分别是INSERT，DELETE和UPDATE的BEFORE和AFTER触发器
+* 如果只想查询基表，可以通过`information_schema`架构下的`TABLES`查询，条件设为`table_type='BASE_TABLE'`，这里有一个技巧，如果是在当前架构下通过`information_schema.tables`查询，可以使用`database()`函数，该函数返回当前架构，例如`table_schema=database()`
+* `information_schema.views`可以查看视图的元数据
+* 目前(本书使用的是5.6)只支持水平分区(同一个表的不同行放在不同物理文件中)，不支持垂直分区(同一个表不同字段在不同物理文件中)，同时，MySQL的分区是局部分区索引，一个分区中既存放数据又存放索引，而全局分区指的是数据在各个分区中，但是数据索引放在一个对象中
+* `show variables like '%partition%'`查看分区信息
+* RANGE分区：行数据基于属于一个给定连续区间的列值放入到分区，从5.5开始支持RANGE COLUMNS分区
+* LIST分区：通RANGE分区，只是LIST分区面向的是离散值，从5.5开始支持LIST CLOUMNS分区
+* HASH分区：通过用户自定义表达式返回值分区，返回值必须非负
+* KEY分区：根据MySQL提供的哈希函数分区
+* 无论是什么分区类型，如果表中存在主键或者唯一索引，分区列必须是唯一索引的一个组成部分。唯一索引可以允许为NULL，分区列只要是唯一索引的一个组成部分，不需要是整个唯一索引列都是分区列，如果没有指定主键和唯一索引，可以指定任意一个列为分区列
