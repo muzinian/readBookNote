@@ -23,7 +23,7 @@ B+树使用填充因子(fill factor)控制树的删除变化，最小值是50%�
 |yes|yes|1)合并叶子节点和它的兄弟节点<br>2)更新Index Page<br>3)合并Index Page和它的兄弟节点<br>|
 
 ### 5.4 B+树的索引
-B+树索引在数据库中的应用有一个特点是高扇出，在数据库中，B+树高度一半时2到4层，也即查找一个键值记录最多2-4次IO。数据库中的B+树索引会分为聚集索引(clustered index)和非聚集索引(secondary index)，叶子节点存放所有数据，不同之处是叶子节点存放的是否是一整行的信息。
+B+树索引在数据库中的应用有一个特点是高扇出，在数据库中，B+树高度一般是2到4层，也即查找一个键值记录最多2-4次IO。数据库中的B+树索引会分为聚集索引(clustered index)和非聚集索引(secondary index)，叶子节点存放所有数据，不同之处是叶子节点存放的是否是一整行的信息。
 
 聚集索引(clustered index)按照每张表的主键构造一棵B+树，同时叶子节点存放的是整张表的行记录数据，也称聚集索引的叶子节点称为数据页。这个特性决定了索引组织表中的数据也是索引的一部分。每个数据页都通过双向链表来进行链接。由于实际的数据页只能按照一个B+树进行排序，所以每张表只能有一个聚集索引。多数情况，查询优化器倾向于采用聚集索引，因为聚集索引可以直接在该索引的叶子节点直接找到数据，同时，由于定义了数据的逻辑顺序，聚集索引能狗快速访问针对范围值的查询，查询优化器可以快速发现某一段范围的数据页需要扫描。在聚集索引上的数据页上存放的是完整的每行记录，而在非数据页的索引页中，存放的仅仅是键值以及偏移量，而不是完整的行记录。
 ![figure5.2.png "B+树索引"](figure5.2.png "B+树索引")
@@ -120,4 +120,99 @@ and key_part2 = 10000;
 |-|-|
 |1|code|(1:6,1),(4:8)|
 |2|hot|(1:3),(4:8)|
-目前InnoDB支持全文检索，采用full inverted file index的形式，将(DocumentId,Position)看作一个`ilist`，在全文检索
+目前InnoDB支持全文检索，采用full inverted file index的形式，将(DocumentId,Position)看作一个`ilist`，在全文检索有两个列，一个是`word`字段，一个是`ilist`字段，并且`word`字段设有索引，由于记录了`Position`信息，所以还会进行Proximity Search。由于倒排索引需要将`word`放到一张表中，这个表称之为Auxiliary Table(辅助表)持久化的存储在硬盘，为了提高全文检索并行性能，InnoDB共有6张Auxiliary Table，目前每张表根据`word`的Latin编码进行分区。FTS Index Cache(全文检索索引缓存)是一个红黑树，根据(word,ilist)排序，是InnoDB用来提升全文检索性能的工具。有可能出现数据已经更新到了表中，但是对全文索引的更新可能还处于分词操作后还在FTS Index Cache中，此时Auxiliary Table还没有更新。
+
+InnoDB是批量更新Auxiliary Table而不是在插入后就更新。当对全文检索进行查询时，Auxiliary Table会先将FTS Index Cache中对应的word字段合并，到Auxiliary Table中，然后再进行查询。这类似与Insert Buffer。可以通过设置`innodb_ft_aux_table`参数查看倒排索引的Auxiliary Table，命令形如`set GLOBAL innodb_ft_aux_table='schema名/table名'`。设置完成后，可以在`information_schema.INNODB_FT_INDEX_TBALE`得到分词信息。对于InnoDB来说，总是在事务提交时将分词写入到FTS Index Cache中，然后再批量更新写入到硬盘中。即，即使Innodb是延时批量写入到数据库，但是这一切都发生在事务提交时。当数据库关闭时，FTS Index Cache中的数据会同步到Auxiliary Table中，如果宕机时，FTS Index Cache中数据没有同步到硬盘中，那么重启数据库后，当用户对表进行全文检索(查询或者插入)时，InnoDB会自动读取未完成的文档，然后进行分词操作，将分词结果写入到FTS Index Cache中。参数`innodb_ft_cache_size`控制FTS Index Cache大小，默认32M。如果缓存满了，会将分词信息同步到Auxiliary Table中。
+
+InnoDB为了支持全文检索，必须有一个列与word进行映射，这个列命名为`TFS_DOC_ID`，类型是`BIGINT UNSIGNED NOT NULL`，InnoDB会自动在该列上加一个`FTS_DOC_ID_INDEX`的唯一索引，用户也可以在建表的时候加上这个字段和唯一索引，也可以由InnoDB自动完成，注意，自己建表加字段的时候，一定要匹配类型。
+
+上文所说了，分词的插入操作是在事务提交时完成，对于删除操作，事务提交时并不会删除Auxiliary Table中的记录，而是删除FTS_Index_Cache中的数据，对于Auxiliary Table中被删除的记录，InnoDB会记录它的FTS_DOC_ID到DELETED auxiliary table中。设置`innodb_ft_aux_table`后，可以在`information_schema.INNODB_FT_DELETED`观察FTS DOCUMENT ID。
+
+由上可知，文档的DML操作不仅不会删除数据，还是在DELETED表中插入数据，所以InnoDB提供一种方式， 允许用户手工将以删除记录从索引中彻底删除，命令就是`OPTIMIZE TABLE 表名`，如果仅希望对倒排索引操作，而不希望`OPTIMIZE TABLE`做其它操作，可以先设置参数`innodb_optimize_fulltext_only`为`1`，这样只会处理倒排索引。`innodb_ft_num_word_optimize`可以设置每次删除分词的数量，默认2000。
+
+InnoDB有一个默认的stopword(停止词)列表，位于`information_schema.INNODB_FT_DEFAULT_STOPWORD`表中，用户可以通过`innodb_ft_server_stopword`自定以stopword列表。
+
+当前全文检索还有如下限制：
+* 每张表只有一个全文检索索引
+* 多列组合的全文检索的索引列必须使用相同的字符集与排序规则
+* 不支持没有单词界定符(delimiter)的语言，即中日韩等语言
+
+全文检索的语法如下：
+```BNF
+MATCH(col1,col2,...)AGAINST(expr [search_mdoifier])
+search_modifier:
+{
+      IN NATURAL LANGUAGE MODE
+    | IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION
+    | IN BOOLEAN LANGUAGE MODE
+    | WITH QUERY EXPANSION
+}
+```
+`MATCH`制定了需要被查询的列，`AGAINST`指定了使用的查询方式。
+1. NATURAL LANGUAGE:是默认的查询方式，表示查询带有指定word的文档，在WHERE中使用MATCH函数，如果字段没有倒排索引，就会抛出异常，如果有，查询结果是根据相关性(relevance)降序排序。相关性是非负浮点数，最小值为0，表示没有相关性。计算条件有：
+   * word 是否在文档中
+   * word在文档中出现的次数
+   * word在索引列中的数量
+   * 多少个文档包含该word
+  可以使用`MATCH(col1,col2,...)AGAINST(expr [search_mdoifier])`作为字段，返回的是相关性值。对于InnoDB，如果查询的word是stopword，救忽略该字符串的查询，如果word长度在区间\[`innodb_ft_min_token_size`,`innodb_ft_max_token_size`\]之间，才会查询，否则，就会忽略该词搜索，前者默认值是3，后者默认值是84。
+2. Boolean:当使用这个修饰符进行全文检索，查询字符串的前后字符有特殊含义，`+`：表示该word必须存在，例如`MATCH(col) AGAINST('+key' IN BOOLEAN MODE)`表示单词`key`必须出现；`-`：该word必须被排除，`MATCH(col) AGAINST('-key' IN BOOLEAN MODE)`表示单词`key`必须不存在；`(no operator)`表示该word是可选，但是如果出现，那么结果相关性会更高；`@distance`：表示查询的多个单词之间的距离是否在`distance`之内，单位是字节。这种搜索也叫做`Proximity Search`，`MATCH(col) AGAINST('"key1 key2"@20' IN BOOLEAN MODE)`表示单词`key1`和`key2`距离在20个字节内；`>`：表示出现该word增加相关性；`<`：表示出现该word降低相关性；`~`：表示允许出现该单词，但出现时相关性为负(全文检索允许负相关性，注：感觉跟上面矛盾，书中是这么说的，待验证。)；`*`：表示以该单词开头的单词；`""`：表示短语。
+3. Query ExPansion：表示全文检索扩展查询，这种查询通常在查询关键词太短，需要隐含知识(implied knowledge)才能进行。使用`WITH QUERY EXPANSION`或者`IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION`开启`blind query expansion`又叫做`automatic relevance feedback`，该查询分两个阶段：1)根据搜索单词进行全文索引查询2)根据第一阶段产生的分词再一次进行全文检索查询。
+### 总结
+* B+树索引并不能找到一个给定键值的具体行，他只能找到被查找数据行所在页，然后读入到内存，再在内存进行查找，最后得到查找数据
+* 每页的Page Directory中的槽是按照主键顺序存放，对于某一条具体记录的查询是通过对Page Directory进行二分查找得到的
+* B+树是为磁盘或者其它直接存取辅助设备设计的一种平衡查找树，所有记录节点都按照键值大小顺序存放在同一层的页子节点上，由各个页子节点指针进行连接
+* B+树用于磁盘，页拆分意味着磁盘操作，所以要尽可能减少页拆分，B+树提供了旋转功能。旋转发生在Leaf Page满，但是左右兄弟节点没有满的情况，此时B+数不会拆分页，而是将记录移动到兄弟页节点上
+* B+树使用填充因子(fill factor)控制树的删除变化，最小值是50%
+* B+树索引在数据库中的应用有一个特点是高扇出，在数据库中，B+树高度一般是2到4层，也即查找一个键值记录最多2-4次IO
+* 数据库中的B+树索引会分为聚集索引(clustered index)和非聚集索引(secondary index)，叶子节点存放所有数据，不同之处是叶子节点存放的是否是一整行的信息
+* 聚集索引(clustered index)按照每张表的主键构造一棵B+树，同时叶子节点存放的是整张表的行记录数据，也称聚集索引的叶子节点称为数据页。这个特性决定了索引组织表中的数据也是索引的一部分
+* 每个数据页都通过双向链表来进行链接。由于实际的数据页只能按照一个B+树进行排序，所以每张表只能有一个聚集索引
+* 聚集索引的存储并不是物理上连续的，而是逻辑上连续的。这其中包含两点：1)页是通过双向链表链接，页按照主键的顺序排序；2)每个页中的记录也是通过双向链表进行维护的，物理存储上可以同样不按照主键存储
+* 辅助索引(Secondary Index，非聚集索引)的页子节点并不包含行记录的全部数据。页子节点除了包含键值外，每个页子节点的索引行还包含一个书签(bookmark)，用来告诉innodb哪里可以找到索引相对应的行数据，这个书签就是相应行数据的聚集索引键
+* 当通过辅助索引寻找数据时，会遍历辅助索引并通过叶级别的指针获取指向主键索引的主键，再通过主键索引找到完整行记录
+* InnoDB的B+树索引分裂并不总是从中间记录开始，因为这样可能会导致空间浪费，会通过几个变量确认插入数据的逻辑
+* 从InnoDB 1.0.x引入了Fast Index Creation,FIC。对于辅助索引的创建，InnoDB会对创建该索引的表加一个S锁。在创建过程中不需要重建表，删除辅助索引时，InnoDB只需要更新内部视图，并将辅助索引空间标记为可用，同时删除MySQL数据库内部视图上对该表的定义
+* FIC对表加了S锁，创建索引过程中只能对表进行读操作，此外FIC只限定于辅助索引，对于主键的增删依旧需要重建一张表。同时，临时表的创建路径是通过参数`tmpdir`设置，如果这个目录空间不够，则索引创建会失败
+* online DDL说的还是针对辅助索引，根据官方文档，截止到8.0，文档上说的是，重新构建聚集索引始终还是要求复制表数据，在建表时定义主键比发起修改表增加主键要好很多，处理逻辑是：1)首先创建一张临时表，表结构通过命令ALTER TABLE新定义；2)将原表导入到临时表；3)删除原表；4)临时表重命名为原表
+* 建表时，`ALGORITHM`指定了创建或删除索引的算法，其中，`COPY`表示按照MySQL5.1之前的版本，即创建临时表的方式，`INPLACE`表示创建或者删除不需要临时表，`DEFAULT`表示根据`old_alter_table`参数判断是哪种方式，默认是`OFF`表示按照`INPACLE`方式
+* `LOCK`表示索引创建和删除时对表的加锁情况，有`NONE`：索引创建删除过程不加锁，事务可以进行读写操作，最大并发度。`SHARED`：对表加S锁，可以并发读，但是写事务需要等待。`EXCLUSIVE`：对表加X锁，读写事务都不可以执行，阻塞全部线程，这个`COPY`方式类似，只不过不需要创建临时表。`DEFAULT`：首先判断是否可以使用`NONE`，若不能，判断是否可以使用`SHARED`，最后判断是否可以使用`EXCLUSIVE`
+* InnoDB存储引擎是通过在执行或者删除索引操作的同时，将Insert，Update，Delete这类DML操作日志写入到一个缓存中。完成索引创建后，再将重做应用到表上，从而达到数据一致性。缓存大小是由参数`innodb_online_alter_log_max_size`控制，默认128MB
+* `Cardinality`，可以查看索引是否具有高选择性，它表示索引中不重复记录数量的预估值。实际中，`Cardinality/n_rows_in_table`应该尽可能的接近为1
+* 对Cardinality的统计释放到存储引擎层进行的。对它的计算是通过采样进行的
+* InnoDB中，Cardinality统计信息更新发生在两个操作中：INSERT和UPDATE。更新Cardinality的策略是：1)表中1/16的数据都发生了改变；2)stat_modified_counter>2 000 000 000
+  1. 取得B+树索引中叶子节点数量，记录为A
+  2. 随机取B+树索引中的8个叶子节点。统计每个页不同记录的个数，记为P1，P2，P3，...，P8
+  3. 计算Cardinality预估值：Cardinality=(P1+P2+...+P8)*A/8
+* InnoDB是对8和叶子节点预估的，不是精确值，每次对Cardinality值的统计，都是随机取8个叶子节点，这意味着，每次得到的Cardinality值可能不同
+* 参数`innodb_stats_sample_pages`用来设置Cardinality时采样页数量，默认是
+* 参数`innodb_stats_method`用来判断如何对待索引中NULL值记录。默认是`nulls_equal`，表示对NULL值记录视为相等的记录，还有`nulls_unequal`，`nulls_ignored`，分别表示视为不同胡忽略NULL值
+* 当执行`ANALYZE TABLE`,`SHOW TABLE STATUS`，`SHOW INDEX`以及查询`information_schema.tables`或者`information_schema.statistics`时会导致InnoDB重新计算Cardinality值
+* 联合索引也是以可B+树，不同的是，联合索引的键值的数量大于等于2。和单个键值的B+树没有不同，键值都是排序的(注:按照联合索引字段的顺序order by的)，通过叶子节点可以逻辑上顺序的读取出全部数据。由于索引本身已经在叶子节点排序了，联合索引还有一个好处是可以避免多一次排序
+* InnoDB是支持覆盖索引(covering index，也叫索引覆盖)，从辅助索引中可以查询到的记录，不需要再次从聚集索引中查询
+* 由于辅助索引远小于聚集索引，所以如果针对一个张表做统计，InnoDB很可能会通过辅助索引做统计，从而减少IO操作
+* 使用`FORCE INDEX(索引组成列/索引名)`和`USE INDEX(索引组成列/索引名)`，告诉优化器可以选择这个索引，后者是告诉优化器可以使用这个索引，而不是强制使用，`FORCE INDEX`是强制使用
+* MySQL支持Multi-Range Read(MRR)优化。MRR优化的目的是为了减少磁盘的随机访问，它适用于range，ref，eq_ref类型的查询
+* MRR的工作方式如下：1)将查询到的辅助索引键值存放到缓存中，缓存数据是根据辅助索引键值排序的；2)将缓存中的键值根据RowID排序；3)根据RowID的顺序访问实际数据文件，这里的RowId就是主键
+* 启用了MRR后，会在执行计划中的`Extra`中看到`Using index condition；Using MRR`
+* 通过`optimizer_switch`参数可以控制是否启用MRR，当其中的`mrr`为`on`表示启用，`mrr_cost_based`控制是否按照`cost based`方式启用MRR优化。如果，`mrr`为`on`，`mrr_cost_based`为`off`，则总是启用MRR
+* 参数`read_rnd_buffer_size`控制MRR缓冲区大小，如果缓冲区数据大于该值，就对以缓存的数据根据RowID排序，并通过RowID获取行数据。默认是256K
+* 从5.6开始MySQL还支持了Index Condition Pushdown。如果不支持ICP，当进行索引查询时，会先根据索引查找记录，然后根据`where`条件过滤记录。如果支持ICP，MySQL会在取索引的时候，判断是否可以进行`WHERE`条件过滤，将`WHERE`的部分过滤下推到了存储引擎层，这就可以大大减少上层对数据的fetch
+* ICP支持range，ref，eq_ref，ref_or_null类型的查询，MyISAM和InnoDB都支持，如果使用了ICP，那么在执行计划中就可以看到`Using index condition`
+* InnoDB使用哈希算法对字典进行查找，冲突解决机制使用的是链表法，哈希函数采用除法散列。对于缓冲池中的哈希表来说，缓冲池中的Page页都有一个chain指针，指向相同哈希函数值的页，对于除法散列，$m$的取值使用的是略大于缓冲池页数量两倍的质数，注意这个质数不是大于两倍的最小质数
+* InnoDB的表空间都有一个`space_id`，用户要查询的是某个表空间某个连续16KB的页，即偏移量`offset`。InnoDB将`space_id`左移20位，然后用加上`space_id`和`offset`，也即关键字`k`的计算方式是`k=space_id <<20+space_id+offset`然后通过散列除法计算到各个槽中
+* InnoDB支持全文检索，采用full inverted file index的形式，将(DocumentId,Position)看作一个`ilist`，在全文检索有两个列，一个是`word`字段，一个是`ilist`字段，并且`word`字段设有索引，由于记录了`Position`信息，所以还会进行Proximity Search
+* 由于倒排索引需要将`word`放到一张表中，这个表称之为Auxiliary Table(辅助表)持久化的存储在硬盘，为了提高全文检索并行性能，InnoDB共有6张Auxiliary Table，目前每张表根据`word`的Latin编码进行分区
+* FTS Index Cache(全文检索索引缓存)是一个红黑树，根据(word,ilist)排序，是InnoDB用来提升全文检索性能的工具
+* 有可能出现数据已经更新到了表中，但是对全文索引的更新可能还处于分词操作后还在FTS Index Cache中，此时Auxiliary Table还没有更新
+* InnoDB是批量更新Auxiliary Table而不是在插入后就更新
+* 对全文检索进行查询时，Auxiliary Table会先将FTS Index Cache中对应的word字段合并，到Auxiliary Table中，然后再进行查询
+* 通过设置`innodb_ft_aux_table`参数查看倒排索引的Auxiliary Table，命令形如`set GLOBAL innodb_ft_aux_table='schema名/table名'`。设置完成后，可以在`information_schema.INNODB_FT_INDEX_TBALE`得到分词信息
+* 总是在事务提交时将分词写入到FTS Index Cache中，然后再批量更新写入到硬盘中，即使Innodb是延时批量写入到数据库，但是这一切都发生在事务提交时
+* 当数据库关闭时，FTS Index Cache中的数据会同步到Auxiliary Table中，如果宕机时，FTS Index Cache中数据没有同步到硬盘中，那么重启数据库后，当用户对表进行全文检索(查询或者插入)时，InnoDB会自动读取未完成的文档，然后进行分词操作，将分词结果写入到FTS Index Cache中
+* 参数`innodb_ft_cache_size`控制FTS Index Cache大小，默认32M。如果缓存满了，会将分词信息同步到Auxiliary Table
+* InnoDB为了支持全文检索，必须有一个列与word进行映射，这个列命名为`TFS_DOC_ID`，类型是`BIGINT UNSIGNED NOT NULL`，InnoDB会自动在该列上加一个`FTS_DOC_ID_INDEX`的唯一索引，用户也可以在建表的时候加上这个字段和唯一索引，也可以由InnoDB自动完成，注意，自己建表加字段的时候，一定要匹配类型
+* 对于删除操作，事务提交时并不会删除Auxiliary Table中的记录，而是删除FTS_Index_Cache中的数据，对于Auxiliary Table中被删除的记录，InnoDB会记录它的FTS_DOC_ID到DELETED auxiliary table中。设置`innodb_ft_aux_table`后，可以在`information_schema.INNODB_FT_DELETED`观察FTS DOCUMENT ID
+* 由上可知，文档的DML操作不仅不会删除数据，还是在DELETED表中插入数据，所以InnoDB提供一种方式， 允许用户手工将以删除记录从索引中彻底删除，命令就是`OPTIMIZE TABLE 表名`
+* 如果仅希望对倒排索引操作，而不希望`OPTIMIZE TABLE`做其它操作，可以先设置参数`innodb_optimize_fulltext_only`为`1`，这样只会处理倒排索引。`innodb_ft_num_word_optimize`可以设置每次删除分词的数量，默认2000
+* InnoDB有一个默认的stopword(停止词)列表，位于`information_schema.INNODB_FT_DEFAULT_STOPWORD`表中，用户可以通过`innodb_ft_server_stopword`自定以stopword列表
+* 当前全文检索还有这些限制：每张表只有一个全文检索索引，多列组合的全文检索的索引列必须使用相同的字符集与排序规则，不支持没有单词界定符(delimiter)的语言，即中日韩等语言
