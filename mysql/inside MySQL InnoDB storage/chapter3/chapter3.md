@@ -76,6 +76,7 @@ redo log 有多种重做日志格式()，基本格式如下：
 
 ### 总结
 * `information_shcema`架构下的`global_variables`视图可以查看全局参数
+* 错误日志可以通过`show variables like 'log_error'`定位
 * MySQL默认不启动慢查询日志，参数`log_slow_queries`控制启用/禁用(注：查询得知这个参数要被`slow_query_log`取代，后文也是用这个参数动态启停记录慢查询)
 * 设置参数`long_query_time`阈值(默认是10，10秒钟，注：后文又说按照微秒为单位记录，待验证)，可以将运行时间超过该值的SQL都记录到慢查询日志文件中(只记录超过的，不记录等于的)。
 * `log_queies_using_indexes`可以控制是否启用/禁用记录没有使用索引的查询。`log_throttle_queries_not_using_indexes`表示每分钟允许记录到慢日志且未使用索引的SQL语句次数，默认是0，表示没有限制。
