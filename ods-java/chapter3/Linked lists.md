@@ -232,7 +232,7 @@ class Location{
     }
 }
 ```
-为了找到包含特定元素的块，我们按照在`DLList`中同样的做法来处理。我们要么从列表头开始向后遍历，或者从列表尾部向前遍历直到我们到达我们想要的节点(注意：这里原文的方向和我翻译的方向朝向不一样，原文是 We either start at the front of the list and traverse in the forward direction,or at the back of the list and traverse backwards until we reach the node we want.可以看到原文是说，从头开始是向前查，从尾开始是向前查。这里需要注意，我是按照中文从头到尾是向后，从尾到头是向前。下文中文的时候，都是按照中文的方向)。唯一的区别就是，每次我们移动到下一个节点，我们就跳过了一整块的元素。
+为了找到包含特定元素的块，我们按照在`DLList`中同样的做法来处理。我们要么从列表头开始向后遍历，或者从列表尾部向前遍历直到我们到达我们想要的节点(注意：这里原文的方向和我翻译的方向朝向不一样，原文是 We either start at the front of the list and traverse in the forward direction,or at the back of the list and traverse backwards until we reach the node we want.可以看到原文是说，从头开始是向前查，从尾开始是向后查。这里需要注意，我是按照中文从头到尾是向后，从尾到头是向前。下文中文的时候，都是按照中文的方向)。唯一的区别就是，每次我们移动到下一个节点，我们就跳过了一整块的元素。
 ```Java
 Location getLocation(int i){
     if(i < n/2){
@@ -292,3 +292,68 @@ boolean add(T x){
 1. 我们迅速的(在$r+1 \le b$步中)找到一个节点$u_r$的块未满。在这种情况下，我们执行$r$次从一个块移动一个元素到下一个块。这样，在$u_r$的空闲空间就变成了在`u_0`的空闲空间。我们接下来就可以把`x`插入到$u_0$的块中。
 2. 我们迅速的(在$r+1 \le b$步中)走到了块列表的尾部。在这种情况下，我们在快列表尾部添加一个新块然后按照第一种情况执行。
 3. 在$b$步后我们没有找到任何一个未满的块。在这种情况下，$u_0,...,u_{b-1}$是`b`个块中包含了`b+1`个元素的序列。我们在这个序列的末端插入一个新的块$u_b$，然后扩散最初的$b(b+1)$个元素使得$u_0,...,u_b$每个块都包含$b$个元素，现在$u_0$块仅包含$b$个元素，就为我们插入`x`腾出了空间。
+```Java
+void add(int i ,T x){
+    if(i == n){
+        add(x);
+        return;
+    }
+    Location l = getlocation(i);
+    Node u = l.u;
+    int r = 0;
+    while (r < b && u != dummy && u.d.size() == b+1){
+        u = u.next;
+        r++;
+    }
+    if (r == b){//b个block每个都包含b+1个元素
+        spread(l.u);
+        u = l.u;
+    }
+    if(u == dummy) {//到达尾端添加新节点
+        u = addBefore(u);
+    }
+    while (u != l.u) {//向前工作，移动元素
+        u.d.add(0,u.prev.d.remove(u.prev.d.size()-1));
+        u = u.prev;
+    }
+    u.d.add(l.j,x);
+    n++;
+}
+```
+`add(i,x)`操作的运行时间依赖于上述三种情况发生哪种。情况1和2包含最多在`b`个块中检查和移动元素，因此花费$O(b)$的时间。情况3包含调用`spread(u)`方法，会移动$b(b+1)$个元素因此花费时间是$O(b^2)$。如果我们忽略情况3的开销(稍后我们会使用摊销再计算它)，这意味着定位`i`和执行插入`x`的总时间是$O(b+\min \{i,n-i\}/b)$。
+
+### 3.3.4 删除元素
+从`SEList`中删除一个元素类似于添加一个元素。我们首先定位包含的元素中有索引是`i`的节点`u`。现在，我们就需要处理，如果我们从`u`中删除一个元素，怎么保证`u`始终满足`SEList`的定义，即`u`的大小不能小于`b-1`个元素。
+
+再一次，设$u_0,u_1,u_2,...$分别表示`u,u.next,u.next.next,...`等等。我们按顺序检查$u_0,u_1,u_2,...$，我们找到一个节点，从中可以借出一个元素从而让$u_0$块的大小至少是`b-1`。这里有三种情况：
+1. 我们快速的(在$r+1 \le b$步中)找到一个节点，它的块包含超过`b-1`个元素。在这种情况下，我们一共执行r次从一个块中移动一个元素到前一个块中操作，这样在$u_r$中额外的元素就变成了在$u_0$的额外元素(so that the extra element in $u_r$ becomes an extra element in $u_0$.原文是这样，不知道是不是我理解错了，但是$u_r$的元素没有移动到$u_0$，而是到了$u_{r-1}$中)。我们可以从$u_0$块中删除相应的元素。
+2. 我们迅速的(在$r+1 \le b$步中)跑到了块链表尾端，在这种情况下，$u_r$是最后一个块，不需要确保包含至少`b-1`个元素。因此，我们按照上面处理，从$u_r$中借用一个元素，从而在$u_0$多制造出一个元素。如果这导致了$u_r$的块变为空，我们就删除它。
+3. 在$b$步后，我们没有找到任何块包含超过$b-1$个元素。在这种情况下，$u_0,u_1,u_2,...,u_{b-1}$为`b`个包含`b-1`个元素的块序列。我们 _收集_ 这些$b(b-1)$个元素并放到$u_0,u_1,u_2,...,u_{b-2}$中，这样，`b-1`个块中每个就包含`b`个元素了，我们删除$u_{b-1}$，因为他现在已经为空了。现在$u_0$的块就包含`b`个元素，这样我们就可以从中删除相应的元素了。
+
+![figure3.5.png "在SEList中部删除一个元素x会发生的三种情况(SEList的块大小是b=3)"](figure3.5.png "在SEList中部删除一个元素x会发生的三种情况(SEList的块大小是b=3)")
+
+```Java
+T remove(int i){
+    Location l =getLocation(i);
+    T y = l.u.d.get(l.j);
+    Node u = l.u;
+    int r = 0;
+    while(r < b && u!=dummy && u.d.size() == b-1){
+        u = u.next;
+        r++;
+    }
+    if(r == b){//b个块每个都包含b-1个元素
+        gather(1.u);
+    }
+    u = l.u;
+    u.d.remove(l.j);
+    while(u.d.size() < b-1 && u.next != dummy){
+        u.d.add(u.next.d.remove(0));
+        u = u.next;
+    }
+    if(u.d.isEmpty())remove(u);
+    n--;
+    return y;
+}
+```
+就像`add(i,x)`操作，如果我们忽略在情况3中`gather(u)`方法的开销，`remove(i)`的运行时间就是$O(b+\min \{i,n-i\}/b)$。
