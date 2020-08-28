@@ -35,7 +35,9 @@ InnoDB还支持多粒度(granular)锁定，这种锁定允许事务在行级上�
 |IS锁|不兼容|兼容|兼容|兼容|
 |IX锁|不兼容|不兼容|兼容|兼容|
 
-可以通过`SHOW ENGINE INNODB STATUS`查看当前锁请求的信息，`lock recs but not gap`意味着锁住的是一个索引，不是一个范围。表`INNODB_TRX`反映了事务的i情况，包含的字段有：
+可以通过`SHOW ENGINE INNODB STATUS`查看当前锁请求的信息，`lock recs but not gap`意味着锁住的是一个索引，不是一个范围。
+
+表`INNODB_TRX`反映了事务的i情况，包含的字段有：
 |字段名|说明|
 |-|-|
 |trx_id|InnoDB内部事务的唯一ID|
@@ -171,6 +173,48 @@ InnoDB中，参数`innodb_lock_wait_timeout`用来控制锁的等待时间(默�
 
 ### 6.8节
 MySQL不存在锁升级的问题，他不根据每个记录产生行锁，而是根据事务访问的每个页对锁进行管理，使用位图。因此，无论事务锁住的是页中一个记录还是多个记录，开销基本一致。
+
+### 总结
+* `latch`一般称为闩锁(轻量级锁)，其要求锁定时间非常短，如果持续时间长，性能会比较差
+* 在InnoDB内，latch又分为mutex(互斥量)和rwlock(读写锁)，用来保证并发线程操作临界资源的正确性，通常没有死锁检测机制
+* `lock`的对象是事务，用来锁定数据库中的对象，如表，行，页
+* `lock`的对象仅在事务`commit`或`rollback`后进行释放(不同事务隔离级别释放的时间不同)，对于`lock`，InnoDB是有死锁检测机制的
+* 可以用过的`SHOW ENGINE INNODB MUTEX`查看Innodb的latch
+* 可以通过`SHOW ENGINE INNODB STATUS`以及`information_schema`架构下的表`INNODB_TRX`，`INNODB_LOCKS`，`INNODB_LOCK_WAITS`观察锁信息
+* InnoDB实现了两种标准的行级锁：共享锁(S锁)，允许事务读取一行数据；排他锁(X锁)，允许事务删除或者更新一行数据
+* InnoDB还支持多粒度(granular)锁定，这种锁定允许事务在行级上的锁和表级上的锁同时存在。为了支持在不同粒度上加锁，InnoDB支持一种额外的锁方式，称为意向锁(Intention Lock)
+* 可以将上锁的对象看作一棵树，对下层对象上锁，也就是对细粒度的对象上锁，需要对粗粒度的对象上锁
+* InnoDB支持的意向锁设计就是表级别的锁，主要是为了在事务中揭示下一行将被请求的锁类型，包含两种锁：意向共享锁(IS Lock)，事务想要获取表中某几行的共享锁；意向排他锁(IX Lock)，事务想要获取表中某几行的排他锁
+* 由于InnoDB支持行级别的锁，所以意向锁不会阻塞除全表扫描以外的任何请求
+* 可以通过`SHOW ENGINE INNODB STATUS`查看当前锁请求的信息，`lock recs but not gap`意味着锁住的是一个索引，不是一个范围
+* 一致性非锁定读(consistent nonblocking read)表示的是InnoDB使用MVCC(多版本并发控制 multi verson Concurrency control)的方式读取当前执行时间数据库中行数据。如果读取行正在DELETE或者UPDATE，这时读取操作不会等待行上锁释放，InnoDB会去读取行的一个快照数据
+* 快照数据是指该行之前版本的数据，是通过undo段完成的
+* 读取快照数据不需要上锁，这是InnoDB默认读取方式，即读取不会占用和等待表上的锁
+* 不同的事务隔离级别，读取方式不同，并不是每个事务隔离级别都采用非锁定一致性读，即使是在某个隔离级别采用了非锁定一致性读，但是对快照数据的定义每个事务隔离级别也不相同
+* 快照数据是当前数据之前版本，因此每行记录可能有多个版本，这种一个行记录可能又不止一个快照数据的技术，称为行多版本技术，由此带来的并发控制，叫做多版本并发控制(multi verson Concurrency control MVCC)
+* InnoDB在READ COMMITED和REPEATABLE READ(InnoDB默认事务隔离级别)下采用非锁定一致性读，但是读取的快照数据定义是不同的
+* 在RC隔离级别下，总是读取被锁定行的最新一份快照，在RR隔离级别下，总是读取事务开始时的行数据版本。RC其实会违反数据库ACID的I特性
+* 默认InnoDB的事务隔离级别是RR，所以使用的是一致性非锁定读
+* InnoDB提供两种语句可以执行一致性锁定读(locking read)：`SELECT...FOR UPDATE`,`SELECT...LOCK IN SHARE MODE`第一个语句对行记录加X锁，第二个语句对行记录加S锁
+* InnoDB存储引擎内存结构中，对每个含有自增长值的表都一个一个自增长计数器(auto-increment counter)，当对含有自增长计数器的表进行插入操作时，这个计数器会被初始化，通过SQL`SELECT MAX(自增长列名) from tbl for update`获取计数器的值，插入操作会根据这个自增长计数器加一给自增长列，这种方式称为AUTO-INC Locking，其实是一个特殊的表锁机制，为了提高插入的性能，所不是在一个事务完成后才释放，而是在完成对增长值插入的SQL语句后立即释放
+* 从MySQL5.1.22开始，InnoDB引入了一种轻量级互斥量自增长实现机制，并提供了参数`innodb_autoinc_lock_mode`控制自增长模式,`innodb_autoinc_lock_mode`包含三个值0，1，2,具体值含义见上文
+* 在InnoDB中，对于一个外键列，如果没有显式加索引，InnoDB会自动加索引，这样可以避免表锁
+* 对于外键值的插入或者更新，是需要先查询父表记录，对于父表的SELECT操作时不能使用非锁定一致性读(非锁定一致性读取读的是快照数据，可能导致数据不一致)，使用的是`SELECT...LOCK IN SHARE MODE`
+* InnoDB包含三种行锁算法：Record Lock：记录锁，单个记录加锁；Gap Lock：间隙锁，锁定一个范围，但不包含记录本身；Next-key Lock：Gap Lock+Record Lock，锁定一个范围，并且把记录本身也锁定
+* Record Lock 总是锁定索引记录，如果表上没有设置任何索引，那么InnoDB会使用隐式的主键进行锁定
+* Gap Lock：锁住的是两个值之间的间隙，在执行特定查询的时候，不仅仅会给所需行加上行锁，还会给两边的空隙加上间隙锁。间隙锁锁住的是行的间隙，所以，间隙锁之间冲突的，是向这个间隙中插入一个记录这一操作，间隙锁之间是没有冲突的
+* 间隙锁只在RR隔离级别下展示，如果设置了更低的隔离级别，就没有了gap lock，同时需要把binlog格式设置为row，才能保主从一致
+* Next-key Lcok是结合了Gap Lock和Record Lock的锁定算法(next-key lock是左开右闭区间)，采用Next-key Lock的锁定技术称为Next-Key Locking，在Next-Key Lock算法下，InnoDB对于行的查询都是采用这种锁定算法
+* 如果查询的索引是唯一索引，InnoDB存储引擎会对Next-Key Lock降级为Record Lock，即锁住索引本身不是范围
+* 如果执行的语句最终会涉及到多个索引，需要分别进行锁定
+* 在RC下，除了除了外键约束和唯一性检查还需要Gap Lock,其它情况就是用Record Lock
+* Phantom Problem是指在同一个事务下，连续执行两次SQL可能导致不同结果，第二次SQL语句可能返回之前不存在的行(幻读专指新插入的行)。InnoDB使用Next-key Lock算法避免幻读(通过对范围加锁，还包括对下一个键值按照gap lock方式加锁)
+* 参数`innodb_lock_wait_timeout`用来控制锁的等待时间(默认是50s)，可以动态设置。`innodb_rollback_on_timeout`用来设置是否在等待超时时对进行中的事务进行回滚(默认OFF，不回滚)，参数是静态的，在启动后无法调整
+* 当前数据库基本上都还使用了等待图(wait-for graph)(等待图是一个有向图)进行死锁检测
+* wait-for graph保存两个信息：锁的信息链表，事务等待链表。通过上述链表可以构造一张图，如果图中出现回路，就代表出现了死锁
+* ait-for graph中，事务为图中的节点，两个节点T1指向T2的边定义为：T1等待T2所占用的资源；T1最终等待T2所占用的资源(两个事务等待相同的资源，事务T1发生在事务T2后)
+
+
 
 ### 附录：MySQL实战45讲 的内容(第21讲)
 在RR级别下，由作者丁奇根据代码总结的加锁规则：
