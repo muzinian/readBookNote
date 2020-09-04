@@ -126,5 +126,11 @@ SET [GLOBAL|SESSION] TRANSACTION ISOLATION LEVEL
 InnoDB在SERIALLIZABLE隔离级别会自动给每个select语句后加上`LOCK IN SHARE MODE`，即加上共享锁。在REPREATABLE READ级别下InnoDB是支持SERIALLIZABLE，所以一般是不需要设置为SERIALLIZABLE隔离级别，SERIALLIZABLE级别一般用在分布式事务。READ COMMITTED只有唯一性约束检查以及外键约束检查使用gap lock，其它情况不会使用。但是RC隔离级别时，MySQL如果有主从设置复制要求(replication)，那么binlog的日志格式只能是ROW不能是STATEMENT，后者会导致数据丢失，如果不支持ROW，请考虑设置为RR隔离级别。
 
 ### 7.7节
-InnoDB提供了XA事务，通过XA事务支持了分布式事务，在使用分布式事务时，必须把隔离级别设置为SERIALLIZABLE。XA事务由一个或多个资源管理器(Resource Manager)，一个事务管理器(Transaction Manager)，以及一个应用程序(Applicaiton program)组成。资源管理器提供访问事务资源的方法，一般一个数据库一个资源管理器。事务管理器参与协调全局事务中的各个事务，他需要和所有参与全局事务的资源管理器通信。应用程序定义事务边界，指定全局事务操作。
+InnoDB提供了XA事务，通过XA事务支持了分布式事务，在使用分布式事务时，必须把隔离级别设置为SERIALLIZABLE。XA事务由一个或多个资源管理器(Resource Manager)，一个事务管理器(Transaction Manager)，以及一个应用程序(Applicaiton program)组成。资源管理器提供访问事务资源的方法，一般一个数据库一个资源管理器。事务管理器参与协调全局事务中的各个事务，他需要和所有参与全局事务的资源管理器通信。应用程序定义事务边界，指定全局事务操作。使用分布式事务时，InnoDB存储引擎的事务隔离级别必须是SERIALLIZABLE。
 
+分布式事务使用两阶段提交(two-phase commit)。第一阶段，所有参与全局事务的节点都开始准备(PREPARE)，告诉事务管理器节点已经准备好提交了。在第二阶段，事务管理器告诉资源管理器ROLLBACK还是COMMIT，如果有任意一个节点告诉无法提交，所有节点都会被告知回滚。
+
+MySQL内部还存在另外一种分布式事务，存在于存储引擎和插件，或者存储引擎相互之间。最常见的内部XA事务就是binlog和InnoDB存储引擎之间。如果开启了binlog，那么在事务提交的时候，需要先写binlog，然后写入到InnoDB的redo log。两个操作必须是原子的，必须要同时写入。MySQL数据库在binlog和InnoDB存储引擎之间使用XA事务。当事务提交时，InnoDB存储引擎会先做一个PREPARE操作，将事务xid写入，接指写入binglog，如果在InnoDB引擎提交前，MySQL数据库宕机，那么MySQL在重启的时候会检查准备的UXID事务是否已经提交，若没有，存储引擎层会再次进行一次提交。(注：我的理解是，由于MySQL的存储引擎是插件化的，所以没有binlog和存储引擎的redo log需要同步)
+
+### 7.8节
+避免在循环内提交事务，最好一次性批量提交事务。
