@@ -317,7 +317,7 @@ int hash(T x){
 
 少量的基本数据类型是由超过`w`个bit位组成的，通常是$cw$个bit位，其中，$c$是一个常量整数(Java的`long`和`double`类型就是一个例子，它们的$c=2$。)这些数据类型可以看作是由`c`个部分的符合对象，我们将在下节讲解。
 
-#### 5.3.2 符合元素哈希码
+#### 5.3.2 复合元素哈希码
 对于复合对象，我们想要通过结合对象格个组成部分自身的哈希码创建这个对象的哈希码。这不像说起来那么简单。尽管我们可以为这个找到很多啊hack方法(例如，使用按位异或操作结合这些哈希码)，这些hack方法很多都被证明很容易破坏(foil)(参见练习5.7-5.9)。然而，我们愿意以$2w$个bit位的精度计算，那么就存在简单健壮的方法。假设我们有一个对象是由几个部分组成$p_0,\ldots,p_{r-1}$，每个部分对应的哈希码是$x_0,\ldots,x_{r-1}$。那么我们可以互斥的选择独立随机$w$个bit位的整数$z_0,\ldots,z_{r-1}$和一个随机$2w$个bit位的奇数$z$并使用如下公式计算我们对象的哈希码(Suppose we have an object made up of severals parts $p_0,\ldots,p_{r-1}$ whose hash codes are $x_0,\ldots,x_{r-1}$.Then we can choose mutually independent random w-bit integers $z_0,\ldots,z_{r-1}$ and a random 2w-bit odd integer z and compute a hash code for our object with)：
 $$h(x_0,\ldots,x_{r-1})=\left(\left(z\sum_{i=0}^{r-1}z_ix_i\right)\bmod 2^{2w}\right)\mathrm{div}\;2^w$$
 注意这个哈希码的最后一步()使用了来自5.1.1节的乘法哈希函数来获取`2w`个bit位中间结果，然后把它规约到一个`w`个bit位的最终结果。这里有一个例子，显示了这个方法是怎么计算一个包含了$x_0$，$x_1$和$x_2$三部分的简单复合对象：
