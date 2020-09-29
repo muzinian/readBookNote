@@ -401,7 +401,7 @@ $$\begin{aligned}
     &= n/2
 \end{aligned}$$
 因此，从上一次移动元素的`balance()`从左后调用`add(i,x)`和`remove(i)`的次数至少是$\Phi_{1}-\Phi_{0} \gt n/2-1.$这就完成了证明。$\square$
-#### 25.2 总结
+#### 2.5.2 总结
 下面的定理总结了`DualArrayDeque`的特性：
 __定理2.4__ 一个`DualArrayDeque`实现了`List`接口。忽略掉调用`resize()`和`balance()`的开销，`DualArrayDeque`支持
 * `get(i)`和`set(i,x)`的时间开销是$O(1)$的，并且
