@@ -36,7 +36,7 @@ T set(int i,T x){
 ```
 图2.1展示了从`ArrayStack`中增加和删除元素的操作。为了实现`add(i,x)`操作，我们首先检查a是不是满的。如果是，我们调用`resize()`方法增加`a`的大小。我们稍后讨论如何实现`resize()`操作。现在，知道在调用`resize()`后我们可以确保`a.length>n`就足够了。使用这个方法，我们现在对元素`a[i],...,a[n-1]`右移一个元素从而给`x`移动空间，设置`a[i]`为x，然后增加`n`。
 
-![figure2.1.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号"](#figure2.1.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号")
+![figure2.1.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号"](figure2.1.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号")
 
 ```java
 void add(int i,T x){
@@ -168,7 +168,7 @@ int n;
 ```
 对`ArrayQueue`的`add(x)`和`remove()`操作序列展示如图2.2。为了实现`add(x)`，我们先检查`a`是否满了，并且，如果需要的话，调用`resize()`来增加`a`的大小。下一步，我们存放`x`到`a[(j+n)%a.length]`并对`n`
 
-![figure2.2.png "对`ArraQueue`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号")
+![figure2.2.png "对`ArraQueue`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号"](figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致调用`resize()`的操作标记了一个星号")
 
 ```java
 boolean add(T x) {
@@ -208,7 +208,7 @@ void resize() {
 __定理2.2.__ 一个`ArrayQueue`实现了(FIFO)`Queue`接口。忽略调用`resize()`的开销，`ArrayQueue`支持$O(1)$的`add(x)`和`remove()`操作。进一步的，从一个空`ArrayQueue`开始，任意$m$个`add(i,x)`和`remove(i)`操作序列会导致对`resize()`全部调用一共会花费$O(m)$的时间。
 
 ### 2.4 `ArrayDeque`：使用数组的快速双端队列操作
-上一节的`ArrayQueue`表示的是一个允许我们高效的在一端添加在另一端删除的序列。`ArrayDeque`数据结构允许我们高效的在双端天机和删除。这个结构同样使用了用于表示`ArrayQueue`的循环数组技术实现了`List`接口
+上一节的`ArrayQueue`表示的是一个允许我们高效的在一端添加在另一端删除的序列。`ArrayDeque`数据结构允许我们高效的在双端添加和删除。这个结构同样使用了用于表示`ArrayQueue`的循环数组技术实现了`List`接口
 ```Java
 T[] a;
 int j;
@@ -227,7 +227,7 @@ T set(int i,T x){
 ```
 `add(i,x)`的实现更有意思点。想通常那样，我们先检查`a`是不是满的，如果需要，调用`resize()`来调整`a`。记住我们想要这个操作很快当`i`很小(接近0)或者当`i`很大(接近$n$)。因此，我们检查是否$i \lt n/2$。如果是，我们对元素`a[0],...,a[i-1]`左移一个位置。否则($i \ge n/2$)，我们对元素`a[i],...,a[n-1]`右移一个位置。图2.3解释了`ArrayDeque`的`add(i,x)`和`remove(x)`操作。
 
-![figure2.3.png "对`ArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。")
+![figure2.3.png "对`ArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。"](figure2.3.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。")
 
 ```Java
 void add(int i,T x){
@@ -317,7 +317,7 @@ void add(int i,T x){
     balance();
 }
 ```
-![figure2.4.png "对`DualArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了。"](#figure2.2.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了")
+![figure2.4.png "对`DualArrayDeque`的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了。"](figure2.4.png "对`ArrayStack`的的`add(x)`和`remove()`操作。箭头表示元素被复制了。导致使用`balance()`函数重平衡的操作用星号标记了")
 
 `add(i,x)`方法通过调用`balance()`方法对`front`和`back`这两个`ArrayStack`执行了再平衡操作。`balance()`的实现在后面描述，现在，知道`balance()`保证了除非`size()<2`，`front.size()`和`back.size()`不会相差超过三倍(`front.size()` and `back.size()` do not differ by more than a factor of 3)。具体地说，$3 \cdot front.size() \ge back.size()$且$3 \cdot back.size() \ge front.size()$。
 
