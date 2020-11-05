@@ -136,7 +136,7 @@ INSERT INTO z SElECT 10,8;
 ```
 加入有事务A执行`SELECT * FROM z HWERE b=3 FOR UPDATE`，由于`b`列上的是辅助索引并且不是唯一索引，使用Next-key locking加锁，由于有两个索引，需要分别进行锁定，对于聚集索引，仅对列a等于5的索引加Record Lock，对于辅助索引，按照Next-Key Lock算法，锁定范围是(1,3)，InnoDB还会对辅助索引的下一个键值加gap lock(参见下面附录，是由于使用的辅助索引，而且索引不是唯一索引，需要继续往后扫描，并加间隙锁)，即还有一个锁定范围为(3,6)的锁。因此，如果有会话B执行了下列几个SQL会阻塞：
 ```SQL
-SELECT * FROM z WHERE a= LOCK IN SHARE MODE;-- 1
+SELECT * FROM z WHERE a=5 LOCK IN SHARE MODE;-- 1
 INSERT INTO z SElECT 4,2; -- 2
 INSERT INTO z SElECT 6,5;-- 3
 ```
