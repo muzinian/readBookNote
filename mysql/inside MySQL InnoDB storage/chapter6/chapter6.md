@@ -100,7 +100,8 @@ InnoDB存储引擎内存结构中，对每个含有自增长值的表都一个�
 `innodb_autoinc_lock_mode`包含三个值0，1，2。
 * 0表示MySQL5.1.22前的自增长方式，即AUTO-INC Locking
 * 1是参数默认值，对于simple inserts，使用互斥量去对内存计数器做累加操作。对于bulk insert，使用AUTO-INC Locking。此时，如果不考虑回滚，自增长列的增长是连续的，基于statement-base的replication还是可以工作，需要注意，如果正在使用AUTO-INC Locking产生自增长值，如果此时需要进行simple insert，依旧需要等待AUTO-INC Locking的释放
-* 对于所有的INSERT-like都通过互斥量，这样，有可能导致自增长值是不连续的，而且statement-base replication会有问题，需要使用row-base replication，才能保证并发量最大的同时主从可以一致。
+* 2对于所有的INSERT-like都通过互斥量，这样，有可能导致自增长值是不连续的，而且statement-base replication会有问题，需要使用row-base replication，才能保证并发量最大的同时主从可以一致。
+
 InnoDB中自增长列上必须有索引，同时自增长列必须索引的第一个列，否则InnoDB会抛出异常，而MyISAM不会。由于MyISAM是表锁设计，所以自增长列不用考虑并发问题(插入的时候对全表锁定，自然不会有并发插入的问题)，因此，在主库为InnoDB，从库为MyISAM时，需要针对考虑。
 
 在InnoDB中，对于一个外键列，如果没有显式加索引，InnoDB会自动加索引，这样可以避免表锁。对于外键值的插入或者更新，是需要先查询父表记录，对于父表的SELECT操作时不能使用非锁定一致性读(非锁定一致性读取读的是快照数据，可能导致数据不一致)，使用的是`SELECT...LOCK IN SHARE MODE`(注：此时数据库会加上S锁)，这样会对父表涉及到的行数据加上S锁，如果此时父表上已经有了X锁，那么子表上的操作就会阻塞。
@@ -163,7 +164,7 @@ InnoDB中，参数`innodb_lock_wait_timeout`用来控制锁的等待时间(默�
 
 举个例子，见上图，事务等待链表中有四个事务t1,t2,t3和t4，所以在wait-for graph中有4个节点。t2对row1，row2占有x锁，t1对row1，row2有s锁。事务t1要等待t2锁住的row1资源，因此，wait-for graph中就是t1指向t2。事务t2要等待事务t1和事务t4占用的row2资源，所以存在t2指向t1和t4的边，同样，存在t3指向t1，t2，t4的边，所以wait-for graph:
 
-![figure6.5.png "上例的wait-for graph"](figure6.5.png "上例的wait-for graph")
+![figure6.6.png "上例的wait-for graph"](figure6.6.png "上例的wait-for graph")
 
 可知t1和t2之间存在回路，我们可以看到wait-for graph是一个主动死锁检测，在每个事务请求锁并发生等待时都会判断是否存在回路，存在就说明有死锁，InnDB会选择回滚undo量最小的事务。wait-for graph通常使用深度优先遍历，使用非递归的方式实现。
 
@@ -226,5 +227,5 @@ MySQL不存在锁升级的问题，他不根据每个记录产生行锁，而是
 
 需要注意，加锁是加到索引上的，如果执行的字段上没有索引，会进行全表扫描并对全部主键加行锁，并对主键产生的间隙加间隙锁。
 
-如果是普通索引不是主键索引，`Lock in share mode`只会锁住覆盖索引而`for update`会让innodb认为你要更新数据，就会给主键索引满足的行加上行锁。这句话是什么意思呢？如果有一个表t字段为(a,b,c)，其中a是主键，c上有索引，假设有记录(1,1,1),(5,5,5),(10,10,10)那么如果有SQL`select a from t where c=5 lock in share mode`时，遮掩，会对c=5这一行加上S锁，由于c上的索引不是唯一索引，所以需要向后扫描值到c=10，所以要给(5,10]加上next-key lock。又根据第四条，最后一条不为5，所以退化为间隙锁(5,10)，根据第2条，__只有访问到的对象才加锁__，这里只用了c上的索引，所以只对这个索引的间隙(5,10)加了锁，因此，如果有会话执行了`update set d= d+1 where id = 5;`那么这个由于没有会话对主键加锁，所以这个是可以执行的，但是如果有会话执行`insert into t values(7,7)`，那么就会阻塞，因为有会话在索引c上的间隙(5,10)锁住。所以，如果用`lock in share mode`，就需要考虑绕过覆盖索引的优化，才能真正的锁住数据，比如把`select a from t where c=5 lock in share mode`改成``select d from t where c=5 lock in share mode``，此时，由于还要再次回表访问主键索引，还会给主键上加上间隙锁，因此就`update set d= d+1 where id = 5;`就会阻塞。
+如果是普通索引不是主键索引，`Lock in share mode`只会锁住覆盖索引而`for update`会让innodb认为你要更新数据，就会给主键索引满足的行加上行锁。这句话是什么意思呢？如果有一个表t字段为(a,b,c)，其中a是主键，c上有索引，假设有记录(1,1,1),(5,5,5),(10,10,10)那么如果有SQL`select a from t where c=5 lock in share mode`时，这样，会对c=5这一行加上S锁，由于c上的索引不是唯一索引，所以需要向后扫描值到c=10，所以要给(5,10]加上next-key lock。又根据第四条，最后一条不为5，所以退化为间隙锁(5,10)，根据第2条，__只有访问到的对象才加锁__，这里只用了c上的索引，所以只对这个索引的间隙(5,10)加了锁，因此，如果有会话执行了`update set d= d+1 where id = 5;`那么这个由于没有会话对主键加锁，所以这个是可以执行的，但是如果有会话执行`insert into t values(7,7,7)`，那么就会阻塞，因为有会话在索引c上的间隙(5,10)锁住。所以，如果用`lock in share mode`，就需要考虑绕过覆盖索引的优化，才能真正的锁住数据，比如把`select a from t where c=5 lock in share mode`改成``select d from t where c=5 lock in share mode``，此时，由于还要再次回表访问主键索引，还会给主键上加上间隙锁，因此就`update set d= d+1 where id = 5;`就会阻塞。
 
