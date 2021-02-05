@@ -269,3 +269,11 @@ __命令和参数__
 19. 参数`innodb_flush_neighbors`可以控制是否启用这个特性
 20. 参数`innodb_fast_shutdown`会改变innoDB的行为，取值为0，1，2。默认为1。
 21. 参数`innodb_force_recovery`控制这恢复的情况，默认是0，这个参数还支持1~6，6个非零值
+
+注：
+参见 https://mp.weixin.qq.com/s/U7lQdZ4r7M5uZrcK7fAFAA
+AHI是通过缓冲池的B+ Tree构造而来，使用索引键的前缀来构建哈希索引，前缀可以是任意长度。因此构建速度很快，而且不需要对整张表构建hash索引。InnoDB存储引擎会自动根据访问的频率和模式来自动地为某些热点页建立hash索引
+
+在多并发连接的场景下，哈希索引的使用频率大大超过了监视哈希索引和维护哈希结构的频率，从而导致资源竞争，也就会消耗额外的CPU
+
+如果show engine innodb status  信号量那块里面有大量RW-latches created in btr0sea.c 的信息，则表明AHI 影响性能了
