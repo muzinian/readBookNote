@@ -116,10 +116,12 @@ and key_part2 = 10000;
 * inverted file index 表现形式为{单词，单词所在文档ID}
 * full inverted file index 表现形式为{单词，(单词所在文档ID，具体文档位置)}
 对于inverted file index，他仅仅存放了单词和文档id，而full inverted file index存放了单词和文档id位置对(pair)，即(DocumentId,Position)。格式类似于：
+
 |number|text|documents|
-|-|-|
+|-|-|-|
 |1|code|(1:6,1),(4:8)|
 |2|hot|(1:3),(4:8)|
+
 目前InnoDB支持全文检索，采用full inverted file index的形式，将(DocumentId,Position)看作一个`ilist`，在全文检索有两个列，一个是`word`字段，一个是`ilist`字段，并且`word`字段设有索引，由于记录了`Position`信息，所以还会进行Proximity Search。由于倒排索引需要将`word`放到一张表中，这个表称之为Auxiliary Table(辅助表)持久化的存储在硬盘，为了提高全文检索并行性能，InnoDB共有6张Auxiliary Table，目前每张表根据`word`的Latin编码进行分区。FTS Index Cache(全文检索索引缓存)是一个红黑树，根据(word,ilist)排序，是InnoDB用来提升全文检索性能的工具。有可能出现数据已经更新到了表中，但是对全文索引的更新可能还处于分词操作后还在FTS Index Cache中，此时Auxiliary Table还没有更新。
 
 InnoDB是批量更新Auxiliary Table而不是在插入后就更新。当对全文检索进行查询时，Auxiliary Table会先将FTS Index Cache中对应的word字段合并，到Auxiliary Table中，然后再进行查询。这类似与Insert Buffer。可以通过设置`innodb_ft_aux_table`参数查看倒排索引的Auxiliary Table，命令形如`set GLOBAL innodb_ft_aux_table='schema名/table名'`。设置完成后，可以在`information_schema.INNODB_FT_INDEX_TBALE`得到分词信息。对于InnoDB来说，总是在事务提交时将分词写入到FTS Index Cache中，然后再批量更新写入到硬盘中。即，即使Innodb是延时批量写入到数据库，但是这一切都发生在事务提交时。当数据库关闭时，FTS Index Cache中的数据会同步到Auxiliary Table中，如果宕机时，FTS Index Cache中数据没有同步到硬盘中，那么重启数据库后，当用户对表进行全文检索(查询或者插入)时，InnoDB会自动读取未完成的文档，然后进行分词操作，将分词结果写入到FTS Index Cache中。参数`innodb_ft_cache_size`控制FTS Index Cache大小，默认32M。如果缓存满了，会将分词信息同步到Auxiliary Table中。
@@ -154,7 +156,7 @@ search_modifier:
    * word在文档中出现的次数
    * word在索引列中的数量
    * 多少个文档包含该word
-  可以使用`MATCH(col1,col2,...)AGAINST(expr [search_mdoifier])`作为字段，返回的是相关性值。对于InnoDB，如果查询的word是stopword，救忽略该字符串的查询，如果word长度在区间\[`innodb_ft_min_token_size`,`innodb_ft_max_token_size`\]之间，才会查询，否则，就会忽略该词搜索，前者默认值是3，后者默认值是84。
+  可以使用`MATCH(col1,col2,...)AGAINST(expr [search_mdoifier])`作为字段，返回的是相关性值。对于InnoDB，如果查询的word是stopword，救忽略该字符串的查询，如果word长度在区间[`innodb_ft_min_token_size`,`innodb_ft_max_token_size`]之间，才会查询，否则，就会忽略该词搜索，前者默认值是3，后者默认值是84。
 2. Boolean:当使用这个修饰符进行全文检索，查询字符串的前后字符有特殊含义，`+`：表示该word必须存在，例如`MATCH(col) AGAINST('+key' IN BOOLEAN MODE)`表示单词`key`必须出现；`-`：该word必须被排除，`MATCH(col) AGAINST('-key' IN BOOLEAN MODE)`表示单词`key`必须不存在；`(no operator)`表示该word是可选，但是如果出现，那么结果相关性会更高；`@distance`：表示查询的多个单词之间的距离是否在`distance`之内，单位是字节。这种搜索也叫做`Proximity Search`，`MATCH(col) AGAINST('"key1 key2"@20' IN BOOLEAN MODE)`表示单词`key1`和`key2`距离在20个字节内；`>`：表示出现该word增加相关性；`<`：表示出现该word降低相关性；`~`：表示允许出现该单词，但出现时相关性为负(全文检索允许负相关性，注：感觉跟上面矛盾，书中是这么说的，待验证。)；`*`：表示以该单词开头的单词；`""`：表示短语。
 3. Query ExPansion：表示全文检索扩展查询，这种查询通常在查询关键词太短，需要隐含知识(implied knowledge)才能进行。使用`WITH QUERY EXPANSION`或者`IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION`开启`blind query expansion`又叫做`automatic relevance feedback`，该查询分两个阶段：1)根据搜索单词进行全文索引查询2)根据第一阶段产生的分词再一次进行全文检索查询。
 ### 总结
