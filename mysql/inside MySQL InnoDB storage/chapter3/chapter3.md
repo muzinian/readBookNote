@@ -70,6 +70,7 @@ binlog记录的是MySQL数据库相关的日志，由MySQL自身记录，会记�
 redo log 有多种重做日志格式()，基本格式如下：
 |redo_log_type|space|page_no|redo_log_body|
 |-|-|-|-|
+
 其中`redo_log_type`代表重做日志类型，一个字节；`space`表空间id，采用压缩的方式，空间可能小于4字节；`page_no`页偏移量，采用压缩方式存储；`redo_log_body`重做日志数据。第二章说过，并不是直接写redo log，而是先写入到redo log buffer，然后在按照一定条件写入到redo log，从缓冲中写入到磁盘是按照512个字节写入的，这是硬盘一个扇区的大小，硬盘可以保证对一个扇区的写入是原子的，所以redo log的写入不需要想数据页写入那样需要doublewrite。
 
 参数`innodb_flush_log_at_tx_commit`参数控制在事务提交操作时，处理redo log的方式，可选值有0，1，2。0表示事务提交时，不将事务重做日志写入到硬盘的redo log中，而是等Master Thread的每秒刷新。1表示在执行commit时将重做日志缓冲同步落盘，即会调用`fsync`。2表示将重做日志缓冲异步落盘，即写入到文件系统缓冲中，等操作系统写入，因此也就不能保证执行commit时会写入到重做日志文件，只是会发生写操作。因此，为了ACID，这个参数需要设置为1。
