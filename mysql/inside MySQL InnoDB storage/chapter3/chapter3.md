@@ -68,8 +68,8 @@ innodb_data_file_path=/db/ibdata1:2000M;/dr2/db/ibdata2:2000M:autoextend
 binlog记录的是MySQL数据库相关的日志，由MySQL自身记录，会记录各种存储引擎的日志。而InnoDB的redo log 只会记录InnoDB的事务日志。并且，binlog记录的是逻辑日志，是一个事务的具体操作内容，而InnoDB的redo log记录的是对每个Page的物理修改情况。再次，binlog是在事务commit前提交，落盘一次，不论事务大小。而redo log是在事务进行过程中不断会写入重做日志条目的(redo entry)。
 
 redo log 有多种重做日志格式()，基本格式如下：
-|redo_log_type|space|page_no|redo_log_body|
-|-|-|-|-|
+| redo_log_type | space | page_no | redo_log_body |
+| ------------- | ----- | ------- | ------------- |
 
 其中`redo_log_type`代表重做日志类型，一个字节；`space`表空间id，采用压缩的方式，空间可能小于4字节；`page_no`页偏移量，采用压缩方式存储；`redo_log_body`重做日志数据。第二章说过，并不是直接写redo log，而是先写入到redo log buffer，然后在按照一定条件写入到redo log，从缓冲中写入到磁盘是按照512个字节写入的，这是硬盘一个扇区的大小，硬盘可以保证对一个扇区的写入是原子的，所以redo log的写入不需要想数据页写入那样需要doublewrite。
 
