@@ -1,0 +1,45 @@
+@startuml
+interface IDocumentItem {
+    accept(visitor:IVisitor)
+}
+note left:每个文档项接受一个访问者\n并调用对应的访问者方法
+class Paragraph{
+    accept(visitor:IVisitor)
+}
+
+class Picture{
+    accept(visitor:IVisitor)
+}
+
+class Table{
+    accept(visitor:IVisitor)
+}
+note top of Table:调用visitor.VisitTable(this)
+IDocumentItem<|..Paragraph
+IDocumentItem<|..Picture
+IDocumentItem<|..Table
+@enduml
+
+@startuml
+interface IVisitor {
+    renderParagraph(paragraph:Paragraph)
+    renderPicture(picture:Picture)
+    renderTable(table:Table)
+}
+note left:每个访问者提供了渲染任何文档的方法
+class Render{
+    renderParagraph(paragraph:Paragraph)
+    renderPicture(picture:Picture)
+    renderTable(table:Table)
+}
+
+class ScreenReader{
+    renderParagraph(paragraph:Paragraph)
+    renderPicture(picture:Picture)
+    renderTable(table:Table)
+}
+
+IVisitor<|.. Render
+IVisitor<|.. ScreenReader
+
+@enduml
