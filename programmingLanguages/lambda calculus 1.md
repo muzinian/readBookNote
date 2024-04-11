@@ -1,6 +1,6 @@
+[toc]
 ## lambda演算-1
 __本文主要内容都脱胎于[这里](https://opendsa.cs.vt.edu/ODSA/Books/PL/html/index.html#lambda-calculus)的第三章的前4节。如果有什么错误都是我没有理解到位。__
-
 ### lambda演算的语法和语义
 lambda演算，也叫$\lambda$-演算(lambda-calculus，$\lambda$-calculus)，是邱奇在研究函数的可计算性时创建的。在可计算理论中，lambda演算是一个简洁而有力的模型，可以认为lambda演算是一个函数式编程语言，它和目前所有大规模使用的图灵完备语言的能力是一样。使用lambda演算的程序叫做lambda表达式(λexp)它的语法的BNF格式如下：
 ```BNF
