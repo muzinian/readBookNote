@@ -20,8 +20,8 @@ Ron 在 volkan 提到的邮件中说到：
 
 volkan 希望 Ron 解释一下： one-shot ， non-reentrant ， delimited ， symmetric/assymmetric ， multi-prompt ， cloneable ， stackful 。 Ron 在下一个邮件解释了（ Ron 认为知道 continuations 的各种特点对于理解 Loom 的 continuations 不必须，更不用说理解线程了 ）：
 * assymmetric ：当 continuation suspend 或者 yield ，执行返回到了 caller （调用了 Continuation.run() 的方法 ）。 Symmetric 的 cotinuations 没有 caller 的标记。因此，当它们 yield 的时候，需要指定 execution 到其他 continuation 。但是 symmetric 和 asymmetric 之间不存在谁比谁强，并且它们可以互相模拟。
-* stackful ：这样的 continuation 可以在任意栈深度被 suspend 。而对于 stackless 的 continuation （比如 C# ），摇在同一个子例程处（在 delimited context 开始的地方）被 suspend 。
-* delimited ：这样的 continuation 会捕获从某些特定调用开始的执行上下文（ execution context ）（对于 Java 来说，就是某个 runnable 的 body ），而不是整个执行状态向上直到 main() 方法。 delimited 线对于 undelimited 强大很多，后者被认为没有实际使用价值。
+* stackful ：这样的 continuation 可以在任意栈深度被 suspend 。而对于 stackless 的 continuation （比如 C# ），要在同一个子例程处（在 delimited context 开始的地方）被 suspend 。
+* delimited ：这样的 continuation 会捕获从某些特定调用开始的执行上下文（ execution context ）（对于 Java 来说，就是某个 runnable 的 body ），而不是整个执行状态向上直到 main() 方法。 delimited 线程对于 undelimited 强大很多，后者被认为没有实际使用价值。
 * multi-prompt ：这样的 continuation 可以嵌套，在调用栈的任何位置，任何外围的 continuation 都可以被挂起。这类似`try/catch`块嵌套，并且在抛出某一个类型的异常时候，会 unwind 这个栈一直到能够处理这个异常的嵌套最深的`catch`而不仅仅是嵌套最深的`catch`。嵌套 continuation 的一个例子是在 virtual thread 内使用类 Python 的生成器。这个生成器代码可以执行一个阻塞 IO 调用，而这会 suspend 外围线程 continuation ，而不仅仅是生成器。
 * one-shot/non-reentrant ：每次继续一个 suspended continuation 时它的状态都是可变的，并且我么你无法从同一个 suspension 状态继续它多次（例如，我们不能回到过去）。这和可重入（ reentrant ） continuation 不同，每次我们 suspend 它们，都会返回一个新的不可变 continuation 对象，代表了一个特定的 suspension 点。例如， continuation 是时间上的单个点，并且每次我们继续它都回到那个状态。 reentrant continuation 比 non-reentrant continuation 更强大，它们可以完成 one-shot continuation 不能完成的事情。
 * cloneable ：如果可以克隆一个 one-shot continuation ，就可以提供和 reentrant continuation 同样能力。即使每次我们继续这个 continuation ，它都是可变的，我们可以在继续它之前通过复制创建一个那个时间点的快照，然后后面就可以返回到这里。
